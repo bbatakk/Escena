@@ -23,10 +23,15 @@ async function invokeAssistant(body: Record<string, unknown>): Promise<Record<st
   if (error) {
     const response = (error as Error & { context?: Response }).context
     if (response) {
-      try {
-        const payload = await response.clone().json() as { error?: unknown }
-        if (typeof payload.error === 'string') throw new Error(payload.error)
-      } catch (cause) { if (cause instanceof Error && cause.message !== 'Unexpected end of JSON input') throw cause }
+      const responseBody = await response.clone().text().catch(() => '')
+      if (responseBody) {
+        let providerMessage = ''
+        try {
+          const payload: unknown = JSON.parse(responseBody)
+          if (payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string') providerMessage = payload.error
+        } catch { /* The gateway may return plain text instead of JSON. */ }
+        throw new Error(providerMessage || `La funció d’IA ha fallat (${response.status}): ${responseBody.slice(0, 240)}`)
+      }
     }
     throw error
   }
