@@ -25,6 +25,8 @@ Sense variables d'entorn funciona en **mode demostració**: tres concerts d'exem
 
 La informació econòmica encara és un resum per concert, no un llibre de moviments.
 
+7. Per activar **Tresoreria**, executa `supabase/migrations/202609240005_money_movements.sql`. Els moviments poden ser ingressos o despeses, generals o vinculats a un concert. No substitueixen encara els imports resum de la fitxa.
+
 ## Provar des del mòbil, fora de localhost
 
 1. Puja aquest projecte a un repositori Git (sense `.env.local`).

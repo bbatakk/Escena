@@ -29,6 +29,18 @@ export interface BandDocument {
   archived: boolean
 }
 
+export type MoneyMovementKind = 'ingres' | 'despesa'
+
+export interface MoneyMovement {
+  id: string
+  concertId?: string
+  kind: MoneyMovementKind
+  amount: number
+  date: string
+  category: string
+  note: string
+}
+
 export interface MaterialItem {
   id: string
   name: string

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { type BandDocument, type Concert, emptyDetails } from './model'
+import { type BandDocument, type Concert, type MoneyMovement, emptyDetails } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -16,6 +16,7 @@ function storageErrorMessage(error: { message?: string; statusCode?: string | nu
 
 const demoKey = 'escena-demo-concerts-v1'
 const libraryKey = 'escena-demo-library-v1'
+const moneyKey = 'escena-demo-money-v1'
 
 function dateFromNow(days: number): string {
   const date = new Date()
@@ -250,4 +251,42 @@ export async function uploadBandDocument(document: BandDocument, file: File): Pr
   if (uploadError) throw storageErrorMessage(uploadError)
   try { return await saveBandDocument({ ...document, storagePath: path, fileName: file.name }) }
   catch (error) { await removeConcertDocumentFile(path).catch(() => {}); throw error }
+}
+
+interface MoneyRow { id: string; concert_id: string | null; kind: MoneyMovement['kind']; amount: number; date: string; category: string; note: string }
+function fromMoneyRow(row: MoneyRow): MoneyMovement { return { id: row.id, concertId: row.concert_id || undefined, kind: row.kind, amount: Number(row.amount), date: row.date, category: row.category, note: row.note } }
+
+export async function listMoneyMovements(): Promise<MoneyMovement[]> {
+  if (!supabase) {
+    try { return JSON.parse(localStorage.getItem(moneyKey) || '[]') as MoneyMovement[] }
+    catch { return [] }
+  }
+  const { data, error } = await supabase.from('money_movements').select('*').order('date', { ascending: false }).order('created_at', { ascending: false })
+  if (error) throw error
+  return (data as MoneyRow[]).map(fromMoneyRow)
+}
+
+export async function saveMoneyMovement(movement: MoneyMovement): Promise<MoneyMovement> {
+  if (!supabase) {
+    const all = await listMoneyMovements()
+    localStorage.setItem(moneyKey, JSON.stringify([movement, ...all.filter((item) => item.id !== movement.id)]))
+    return movement
+  }
+  const { data, error } = await supabase.from('money_movements').upsert({
+    id: movement.id, band_id: await bandId(), concert_id: movement.concertId || null,
+    kind: movement.kind, amount: movement.amount, date: movement.date,
+    category: movement.category.trim(), note: movement.note.trim(),
+  }).select('*').single()
+  if (error) throw error
+  return fromMoneyRow(data as MoneyRow)
+}
+
+export async function deleteMoneyMovement(id: string): Promise<void> {
+  if (!supabase) {
+    const all = await listMoneyMovements()
+    localStorage.setItem(moneyKey, JSON.stringify(all.filter((item) => item.id !== id)))
+    return
+  }
+  const { error } = await supabase.from('money_movements').delete().eq('id', id)
+  if (error) throw error
 }
