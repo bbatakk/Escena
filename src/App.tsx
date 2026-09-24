@@ -2,12 +2,12 @@ import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
-  CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu, MoreHorizontal,
+  CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu,
   House, ListMusic, Music2, Navigation, PackageCheck, Paperclip, Pencil, Plus, Search, ShoppingBag, Ticket, Trash2,
   Settings as SettingsIcon, UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
-import { cloudConfigured, deleteConcert, deleteMerchSale, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
+import { cloudConfigured, deleteConcert, deleteMerchSale, getBandName, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
 import { createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type MerchProduct, type MerchSale } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 
@@ -202,7 +202,8 @@ export default function App() {
   const [concerts, setConcerts] = useState<Concert[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-   const [screen, setScreen] = useState<Screen>('home')
+  const [screen, setScreen] = useState<Screen>('home')
+  const [workspaceName, setWorkspaceName] = useState('La nostra banda')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [formInitial, setFormInitial] = useState<Concert | null>(null)
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
@@ -211,6 +212,13 @@ export default function App() {
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
 
   useEffect(() => { localStorage.setItem('escena-theme', theme); document.documentElement.dataset.theme = theme }, [theme])
+
+  useEffect(() => {
+    if (!authReady || (cloudConfigured && !session)) return
+    let active = true
+    getBandName().then((name) => { if (active) setWorkspaceName(name) }).catch(() => {})
+    return () => { active = false }
+  }, [authReady, session?.user.id, online])
 
   useEffect(() => {
     if (!supabase) return
@@ -293,7 +301,7 @@ export default function App() {
   }
 
   return <div className={`app-layout ${themeClass(theme)}`}>
-    <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">EL TEU ESPAI</div><div className="workspace-name"><div className="workspace-avatar">B</div><span>La nostra banda</span><MoreHorizontal size={16} /></div>
+    <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">EL TEU ESPAI</div><button type="button" className="workspace-name" aria-label={`Configurar l’espai ${workspaceName}`} onClick={() => navigate('settings')}><div className="workspace-avatar">{workspaceName.trim().charAt(0).toUpperCase() || 'B'}</div><span>{workspaceName}</span><SettingsIcon size={16} /></button>
        <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'home' ? 'nav-active' : ''} onClick={() => navigate('home')}><House size={19} /> Inici</button><button className={screen === 'list' || screen === 'detail' || screen === 'form' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button><button className={screen === 'treasury' ? 'nav-active' : ''} onClick={() => navigate('treasury')}><Wallet size={19} /> Tresoreria</button><button className={screen === 'merch' ? 'nav-active' : ''} onClick={() => navigate('merch')}><ShoppingBag size={19} /> Marxandatge</button><div className="nav-divider" /><button className={screen === 'people' ? 'nav-active' : ''} onClick={() => navigate('people')}><UsersRound size={19} /> Persones</button><button className={screen === 'materials' ? 'nav-active' : ''} onClick={() => navigate('materials')}><PackageCheck size={19} /> Material</button><button className={screen === 'setlists' ? 'nav-active' : ''} onClick={() => navigate('setlists')}><ListMusic size={19} /> Setlists</button><div className="nav-divider" /><button className={screen === 'settings' ? 'nav-active' : ''} onClick={() => navigate('settings')}><SettingsIcon size={19} /> Configuració</button></nav>
       <div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><CircleHelp size={18} /></span><strong>Tot sota control</strong><p>Una fitxa per concert. Cap detall perdut pel camí.</p></div><div className="sidebar-account"><div className="account-avatar">{session?.user.email?.[0].toUpperCase() || 'D'}</div><div><strong>{session ? 'Compte compartit' : 'Mode demostració'}</strong><span>{session?.user.email || 'Dades només en aquest navegador'}</span></div>{session && supabase ? <button type="button" className="logout-button" onClick={() => void supabase?.auth.signOut()}>Sortir</button> : null}</div></div>
     </aside>
@@ -309,7 +317,7 @@ export default function App() {
          {screen === 'people' ? <Suspense fallback={<div className="content-loading">Carregant persones…</div>}><BandPeople /></Suspense> : null}
          {screen === 'materials' ? <Suspense fallback={<div className="content-loading">Carregant material…</div>}><BandMaterials /></Suspense> : null}
          {screen === 'setlists' ? <Suspense fallback={<div className="content-loading">Carregant setlists…</div>}><Setlists /></Suspense> : null}
-         {screen === 'settings' ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} /> : null}
+         {screen === 'settings' ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} onWorkspaceNameChange={setWorkspaceName} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}
          {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate('list')} /> : null}
         {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}

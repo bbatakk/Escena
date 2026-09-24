@@ -25,12 +25,15 @@ const offlineDataQueueKey = 'escena-offline-data-queue-v1'
 const peopleKey = 'escena-demo-people-v1'
 const materialsKey = 'escena-demo-materials-v1'
 const setlistsKey = 'escena-demo-setlists-v1'
+const bandNameKey = 'escena-demo-band-name-v1'
+const defaultBandName = 'La nostra banda'
 
 export const backupVersion = 1
 export interface AppBackup {
   version: number
   exportedAt: string
   theme?: string
+  workspaceName?: string
   concerts: Concert[]
   library: BandDocument[]
   money: MoneyMovement[]
@@ -42,15 +45,15 @@ export interface AppBackup {
 }
 
 export async function exportBackup(): Promise<AppBackup> {
-  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates')])
-  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, concerts, library, money, merchProducts, merchSales, people, materials, setlists }
+  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists, workspaceName] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), getBandName()])
+  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, concerts, library, money, merchProducts, merchSales, people, materials, setlists }
 }
 
 export function validateBackup(value: unknown): value is AppBackup {
   if (!isRecord(value)) return false
   const backup = value as Partial<AppBackup>
   const hasId = (item: unknown) => isRecord(item) && typeof item.id === 'string' && item.id.length > 0
-  return backup.version === backupVersion
+  return backup.version === backupVersion && (backup.workspaceName === undefined || (typeof backup.workspaceName === 'string' && backup.workspaceName.trim().length > 0 && backup.workspaceName.length <= 80))
     && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && isRecord(item.details) && Array.isArray(item.details.documents) && Array.isArray(item.details.materials))
     && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string')
     && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && typeof item.amount === 'number' && typeof item.date === 'string')
@@ -59,6 +62,27 @@ export function validateBackup(value: unknown): value is AppBackup {
     && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string')
     && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string')
     && Array.isArray(backup.setlists) && backup.setlists.every((item) => hasId(item) && typeof item.name === 'string' && Array.isArray(item.songs) && item.songs.every((song) => typeof song === 'string'))
+}
+
+export async function getBandName(): Promise<string> {
+  if (!supabase || offline()) return localStorage.getItem(bandNameKey) || defaultBandName
+  const { data, error } = await supabase.from('bands').select('name').eq('id', await bandId()).single()
+  if (error) throw error
+  const name = data.name?.trim() || defaultBandName
+  localStorage.setItem(bandNameKey, name)
+  return name
+}
+
+export async function saveBandName(value: string): Promise<string> {
+  const name = value.trim().replace(/\s+/g, ' ')
+  if (!name) throw new Error('Escriu el nom de la banda.')
+  if (name.length > 80) throw new Error('El nom no pot superar els 80 caràcters.')
+  if (!supabase) { localStorage.setItem(bandNameKey, name); return name }
+  if (offline()) throw new Error('Connecta’t a internet per canviar el nom de l’espai compartit.')
+  const { error } = await supabase.from('bands').update({ name }).eq('id', await bandId())
+  if (error) throw error
+  localStorage.setItem(bandNameKey, name)
+  return name
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
@@ -73,6 +97,7 @@ export function importLocalBackup(backup: AppBackup): void {
   localStorage.setItem(materialsKey, JSON.stringify(backup.materials))
   localStorage.setItem(setlistsKey, JSON.stringify(backup.setlists))
   if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
+  if (backup.workspaceName) localStorage.setItem(bandNameKey, backup.workspaceName)
 }
 
 export async function importBackup(backup: AppBackup): Promise<void> {
@@ -112,6 +137,7 @@ export async function importBackup(backup: AppBackup): Promise<void> {
     if (!currentSaleIds.has(sale.id)) await saveMerchSale(sale)
   }
   if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
+  if (backup.workspaceName) await saveBandName(backup.workspaceName)
 }
 
 function offline(): boolean { return typeof navigator !== 'undefined' && !navigator.onLine }
