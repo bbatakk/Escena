@@ -66,7 +66,7 @@ function ConcertCard({ concert, onOpen }: { concert: Concert; onOpen: () => void
   </button>
 }
 
-function CalendarView({ concerts, onOpen, month, setMonth }: { concerts: Concert[]; onOpen: (id: string) => void; month: Date; setMonth: (date: Date) => void }) {
+function CalendarView({ concerts, onOpen, onCreate, month, setMonth }: { concerts: Concert[]; onOpen: (id: string) => void; onCreate: (date: string) => void; month: Date; setMonth: (date: Date) => void }) {
   const year = month.getFullYear()
   const monthIndex = month.getMonth()
   const days = new Date(year, monthIndex + 1, 0).getDate()
@@ -80,7 +80,15 @@ function CalendarView({ concerts, onOpen, month, setMonth }: { concerts: Concert
   }).sort((a, b) => a.date.localeCompare(b.date))
   return <div className="calendar-panel"><div className="calendar-head"><h2>{monthName}</h2><div className="calendar-controls"><button type="button" className="icon-button" aria-label="Mes anterior" onClick={() => setMonth(new Date(year, monthIndex - 1, 1))}><ChevronLeft size={20} /></button><button type="button" className="today-button" onClick={() => setMonth(new Date(today.getFullYear(), today.getMonth(), 1))}>Avui</button><button type="button" className="icon-button" aria-label="Mes següent" onClick={() => setMonth(new Date(year, monthIndex + 1, 1))}><ChevronRight size={20} /></button></div></div>
     <div className="calendar-grid">{['Dl', 'Dt', 'Dc', 'Dj', 'Dv', 'Ds', 'Dg'].map((day) => <div className="weekday" key={day}>{day}</div>)}
-      {cells.map((day, index) => { const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; const events = concerts.filter((item) => item.date === date); const isToday = day === today.getDate() && year === today.getFullYear() && monthIndex === today.getMonth(); return <div className={`calendar-day ${day < 1 || day > days ? 'calendar-day-outside' : ''}`} key={index}>{day >= 1 && day <= days ? <><span className={`calendar-number ${isToday ? 'calendar-today' : ''}`}>{day}</span>{events.map((item) => <button type="button" key={item.id} className="calendar-event" onClick={() => onOpen(item.id)} title={item.title}>{item.title}</button>)}</> : null}</div> })}
+      {cells.map((day, index) => {
+        const validDay = day >= 1 && day <= days
+        const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        const events = validDay ? concerts.filter((item) => item.date === date) : []
+        const isToday = validDay && day === today.getDate() && year === today.getFullYear() && monthIndex === today.getMonth()
+        return <div className={`calendar-day ${!validDay ? 'calendar-day-outside' : 'calendar-day-actionable'}`} key={index} onClick={(event) => { if (validDay && !(event.target as HTMLElement).closest('button')) onCreate(date) }}>
+          {validDay ? <><span className={`calendar-number ${isToday ? 'calendar-today' : ''}`}>{day}</span><button type="button" className="calendar-add-button" aria-label={`Afegir concert el ${formatDate(date)}`} title="Afegir concert aquest dia" onClick={() => onCreate(date)}><Plus size={14} /></button>{events.map((item) => <button type="button" key={item.id} className="calendar-event" onClick={() => onOpen(item.id)} title={item.title}>{item.title}</button>)}</> : null}
+        </div>
+      })}
     </div><div className="calendar-agenda"><span className="eyebrow">CONCERTS DEL MES</span>{monthlyConcerts.length ? monthlyConcerts.map((item) => <button key={item.id} type="button" onClick={() => onOpen(item.id)}><span>{formatDate(item.date, { day: 'numeric', month: 'short' })}</span><strong>{item.title}</strong><ArrowRight size={16} /></button>) : <p>Encara no hi ha concerts aquest mes.</p>}</div></div>
 }
 
@@ -209,6 +217,7 @@ export default function App() {
   const [workspaceProfileLoading, setWorkspaceProfileLoading] = useState(() => cloudConfigured && (!initialWorkspaceProfile.name || !initialWorkspaceProfile.logoUrl))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [formInitial, setFormInitial] = useState<Concert | null>(null)
+  const [formReturnScreen, setFormReturnScreen] = useState<Screen>('list')
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [search, setSearch] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -268,7 +277,8 @@ export default function App() {
 
   function open(id: string) { setSelectedId(id); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
   function navigate(to: Screen) { setScreen(to); setSelectedId(null); setMenuOpen(false); window.scrollTo(0, 0) }
-  function startForm(initial: Concert) { setFormInitial(initial); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
+  function startForm(initial: Concert, returnTo: Screen = screen) { setFormInitial(initial); setFormReturnScreen(returnTo); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
+  function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert, 'calendar') }
   async function save(item: Concert) {
     const saved = await saveConcert(item)
     const previous = concerts.find((existing) => existing.id === saved.id)
@@ -323,13 +333,13 @@ export default function App() {
          {screen === 'setlists' ? <Suspense fallback={<div className="content-loading">Carregant setlists…</div>}><Setlists /></Suspense> : null}
          {screen === 'settings' ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}
-         {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate('list')} /> : null}
-        {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
+         {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate(formReturnScreen)} /> : null}
+         {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
           <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>
           <div className="overview-strip"><div className="overview-next"><div className="overview-icon"><Music2 size={22} /></div><div><span className="eyebrow">PROPER CONCERT</span><strong>{next ? next.title : 'Encara no hi ha cap data'}</strong><small>{next ? `${formatDate(next.date)} · ${next.city || next.venue || 'Lloc per concretar'}` : 'Afegeix un concert per començar'}</small></div>{next ? <button aria-label={`Obrir ${next.title}`} onClick={() => open(next.id)} className="overview-arrow"><ArrowRight size={19} /></button> : null}</div><div className="overview-stat"><span className="eyebrow">PER RESOLDRE</span><strong>{totalPending.toString().padStart(2, '0')}</strong><small>{totalPending === 1 ? 'qüestió pendent' : 'qüestions pendents'}</small></div></div>
           <div className="listing-header"><div className="view-tabs"><button className={screen === 'list' ? 'active-tab' : ''} onClick={() => setScreen('list')}><List size={17} /> Llista</button><button className={screen === 'calendar' ? 'active-tab' : ''} onClick={() => setScreen('calendar')}><CalendarDays size={17} /> Calendari</button></div>{screen === 'list' ? <label className="search-box"><Search size={18} /><span className="sr-only">Cerca concerts</span><input type="search" placeholder="Cerca concerts..." value={search} onChange={(e) => setSearch(e.target.value)} /></label> : null}</div>
-          {screen === 'calendar' ? <CalendarView concerts={concerts} onOpen={open} month={month} setMonth={setMonth} /> : <div className="concert-list"><div className="list-label"><span>PROPERS CONCERTS</span><span>{upcoming.length} {upcoming.length === 1 ? 'concert' : 'concerts'}</span></div>{upcoming.length ? upcoming.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />) : <div className="empty-list"><CalendarDays size={25} /><h3>{search ? 'Cap resultat' : 'Encara no hi ha concerts propers'}</h3><p>{search ? 'Prova una altra cerca.' : 'Crea un concert i comença a reunir tota la informació.'}</p></div>}{other.length ? <><div className="list-label past-label"><span>ANTERIORS I CANCEL·LATS</span><span>{other.length}</span></div>{other.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />)}</> : null}</div>}
+           {screen === 'calendar' ? <CalendarView concerts={concerts} onOpen={open} onCreate={startFormOnDate} month={month} setMonth={setMonth} /> : <div className="concert-list"><div className="list-label"><span>PROPERS CONCERTS</span><span>{upcoming.length} {upcoming.length === 1 ? 'concert' : 'concerts'}</span></div>{upcoming.length ? upcoming.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />) : <div className="empty-list"><CalendarDays size={25} /><h3>{search ? 'Cap resultat' : 'Encara no hi ha concerts propers'}</h3><p>{search ? 'Prova una altra cerca.' : 'Crea un concert i comença a reunir tota la informació.'}</p></div>}{other.length ? <><div className="list-label past-label"><span>ANTERIORS I CANCEL·LATS</span><span>{other.length}</span></div>{other.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />)}</> : null}</div>}
         </> : null}
       </div><footer className="app-footer"><span>Escena · Els concerts, clars.</span><span>Fet per al camí <ArrowRight size={14} /></span></footer>
     </main>
