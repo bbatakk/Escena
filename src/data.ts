@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { type BandDocument, type Concert, type MerchProduct, type MerchSale, type MoneyMovement, emptyDetails } from './model'
+import { type BandDocument, type BandMaterial, type BandPerson, type Concert, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -22,6 +22,9 @@ const merchSalesKey = 'escena-demo-merch-sales-v1'
 const offlineConcertsKey = 'escena-offline-concerts-v1'
 const offlineQueueKey = 'escena-offline-queue-v1'
 const offlineDataQueueKey = 'escena-offline-data-queue-v1'
+const peopleKey = 'escena-demo-people-v1'
+const materialsKey = 'escena-demo-materials-v1'
+const setlistsKey = 'escena-demo-setlists-v1'
 
 function offline(): boolean { return typeof navigator !== 'undefined' && !navigator.onLine }
 function readCache<T>(key: string): T[] { try { return JSON.parse(localStorage.getItem(key) || '[]') as T[] } catch { return [] } }
@@ -401,4 +404,31 @@ export async function deleteMerchSale(id: string): Promise<void> {
   if (offline()) { writeCache(merchSalesKey, readCache<MerchSale>(merchSalesKey).filter((item) => item.id !== id)); queueData('sale', 'delete', id); return }
   const { error } = await supabase.from('merch_sales').delete().eq('id', id)
   if (error) throw error
+}
+
+type Resource = BandPerson | BandMaterial | SetlistTemplate
+type ResourceTable = 'band_people' | 'band_materials' | 'setlist_templates'
+const resourceKeys: Record<ResourceTable, string> = { band_people: peopleKey, band_materials: materialsKey, setlist_templates: setlistsKey }
+export async function listResource<T extends Resource>(table: ResourceTable): Promise<T[]> {
+  if (!supabase || offline()) return readCache<T>(resourceKeys[table])
+  const { data, error } = await supabase.from(table).select('*').eq('active', true).order('name')
+  if (error) throw error
+  const rows = data as T[]
+  writeCache(resourceKeys[table], rows)
+  return rows
+}
+
+export async function saveResource<T extends Resource>(table: ResourceTable, resource: T): Promise<T> {
+  if (!supabase) { const all = readCache<T>(resourceKeys[table]); const next = [...all.filter((item) => item.id !== resource.id), resource]; writeCache(resourceKeys[table], next); return resource }
+  if (offline()) { const all = readCache<T>(resourceKeys[table]); writeCache(resourceKeys[table], [...all.filter((item) => item.id !== resource.id), resource]); return resource }
+  const values = table === 'band_people'
+    ? { id: resource.id, band_id: await bandId(), name: (resource as BandPerson).name, kind: (resource as BandPerson).kind, phone: (resource as BandPerson).phone, email: (resource as BandPerson).email, active: resource.active }
+    : table === 'band_materials'
+      ? { id: resource.id, band_id: await bandId(), name: (resource as BandMaterial).name, category: (resource as BandMaterial).category, active: resource.active }
+      : { id: resource.id, band_id: await bandId(), name: (resource as SetlistTemplate).name, songs: (resource as SetlistTemplate).songs, active: resource.active }
+  const { data, error } = await (supabase as any).from(table).upsert(values).select('*').single() as { data: T | null; error: Error | null }
+  if (error) throw error
+  const saved = data as T
+  writeCache(resourceKeys[table], [...readCache<T>(resourceKeys[table]).filter((item) => item.id !== saved.id), saved])
+  return saved
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
-import { listBandDocuments } from './data'
-import { createId, type BandDocument, type Concert, type ConcertDetails, statusLabels } from './model'
+import { listBandDocuments, listResource } from './data'
+import { createId, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type SetlistTemplate, statusLabels } from './model'
 
 interface Props {
   initial: Concert
@@ -16,11 +16,14 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
   const [library, setLibrary] = useState<BandDocument[]>([])
   const [libraryError, setLibraryError] = useState('')
   const [selectedLibraryId, setSelectedLibraryId] = useState('')
+  const [people, setPeople] = useState<BandPerson[]>([])
+  const [catalog, setCatalog] = useState<BandMaterial[]>([])
+  const [setlists, setSetlists] = useState<SetlistTemplate[]>([])
   const d = concert.details
 
   useEffect(() => {
     let active = true
-    listBandDocuments().then((items) => { if (active) setLibrary(items.filter((item) => !item.archived)) })
+    Promise.all([listBandDocuments(), listResource<BandPerson>('band_people'), listResource<BandMaterial>('band_materials'), listResource<SetlistTemplate>('setlist_templates')]).then(([documents, bandPeople, bandMaterials, templates]) => { if (active) { setLibrary(documents.filter((item) => !item.archived)); setPeople(bandPeople); setCatalog(bandMaterials); setSetlists(templates) } })
       .catch(() => { if (active) setLibraryError('No s’ha pogut carregar la biblioteca de la banda.') })
     return () => { active = false }
   }, [])
@@ -34,6 +37,10 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
     }])
     setSelectedLibraryId('')
   }
+
+  function togglePerson(id: string) { setDetail('personIds', d.personIds.includes(id) ? d.personIds.filter((item) => item !== id) : [...d.personIds, id]) }
+  function addMaterial(id: string) { const item = catalog.find((entry) => entry.id === id); if (!item || d.materials.some((entry) => entry.catalogId === id)) return; setDetail('materials', [...d.materials, { id: createId(), catalogId: id, name: item.name, loaded: false }]) }
+  function applySetlist(id: string) { const item = setlists.find((entry) => entry.id === id); if (item) { setDetail('setlist', item.songs.join('\n')); setDetail('setlistTemplateId', id) } }
 
   function setField<K extends keyof Concert>(key: K, value: Concert[K]) {
     setConcert((prev) => ({ ...prev, [key]: value }))
@@ -92,7 +99,8 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
             <div className="fields">
               <label className="field">Contacte responsable <input value={d.contactName} onChange={(e) => setDetail('contactName', e.target.value)} placeholder="Nom i cognoms" /></label>
               <div className="two-col"><label className="field">Telèfon <input type="tel" value={d.contactPhone} onChange={(e) => setDetail('contactPhone', e.target.value)} /></label><label className="field">Correu <input type="email" value={d.contactEmail} onChange={(e) => setDetail('contactEmail', e.target.value)} /></label></div>
-              <label className="field">Banda i equip <textarea rows={2} value={d.team} onChange={(e) => setDetail('team', e.target.value)} placeholder="Músics, tècnics, mànager..." /></label>
+              {people.length ? <div className="resource-picker"><span>QUI HI VA</span><div className="picker-options">{people.map((person) => <label key={person.id}><input type="checkbox" checked={d.personIds.includes(person.id)} onChange={() => togglePerson(person.id)} />{person.name}<small>{person.kind}</small></label>)}</div></div> : null}
+              <label className="field">Notes d’equip <textarea rows={2} value={d.team} onChange={(e) => setDetail('team', e.target.value)} placeholder="Observacions puntuals del concert" /></label>
             </div>
           </section>
 
@@ -101,7 +109,8 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
             <div className="repeat-list">
               {d.schedule.map((item) => <div className="repeat-row schedule-row" key={item.id}>
                 <input aria-label="Hora" type="time" value={item.time} onChange={(e) => setDetail('schedule', d.schedule.map((x) => x.id === item.id ? { ...x, time: e.target.value } : x))} />
-                <input aria-label="Què passa" value={item.label} onChange={(e) => setDetail('schedule', d.schedule.map((x) => x.id === item.id ? { ...x, label: e.target.value } : x))} placeholder="Prova de so, actuació..." />
+                <select aria-label="Què passa" value={item.kind || 'altre'} onChange={(e) => setDetail('schedule', d.schedule.map((x) => x.id === item.id ? { ...x, kind: e.target.value, label: e.target.value === 'altre' ? '' : e.target.value } : x))}><option value="arribada i muntatge">Arribada i muntatge</option><option value="proves de so">Proves de so</option><option value="obertura de portes">Obertura de portes</option><option value="inici">Inici</option><option value="concert">Concert</option><option value="sortida">Sortida</option><option value="altre">Altres…</option></select>
+                {item.kind === 'altre' || !item.kind ? <input aria-label="Què passa" value={item.label} onChange={(e) => setDetail('schedule', d.schedule.map((x) => x.id === item.id ? { ...x, label: e.target.value } : x))} placeholder="Descriu l'horari" /> : null}
                 <input aria-label="On" value={item.place} onChange={(e) => setDetail('schedule', d.schedule.map((x) => x.id === item.id ? { ...x, place: e.target.value } : x))} placeholder="Lloc (opcional)" />
                 <button type="button" className="icon-button danger-icon" aria-label="Eliminar horari" onClick={() => setDetail('schedule', d.schedule.filter((x) => x.id !== item.id))}><Trash2 size={17} /></button>
               </div>)}
@@ -120,7 +129,7 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
               <label className="field">Sopar <select value={d.dinner} onChange={(e) => setDetail('dinner', e.target.value as ConcertDetails['dinner'])}><option value="pendent">Encara no ho sabem</option><option value="si">Sí</option><option value="no">No</option></select></label>
               {d.dinner === 'si' ? <label className="field">Detalls del sopar <input value={d.dinnerDetails} onChange={(e) => setDetail('dinnerDetails', e.target.value)} placeholder="Hora, lloc, persones..." /></label> : null}
               <label className="field">Allotjament <select value={d.lodging} onChange={(e) => setDetail('lodging', e.target.value as ConcertDetails['lodging'])}><option value="pendent">Encara no ho sabem</option><option value="si">Sí</option><option value="no">No cal</option></select></label>
-              {d.lodging === 'si' ? <label className="field">Detalls de l'allotjament <input value={d.lodgingDetails} onChange={(e) => setDetail('lodgingDetails', e.target.value)} placeholder="Nom, adreça, reserves..." /></label> : null}
+              {d.lodging === 'si' ? <><label className="field">Lloc i adreça de l’allotjament <input value={d.lodgingAddress} onChange={(e) => setDetail('lodgingAddress', e.target.value)} placeholder="Nom de l’hotel i adreça" /></label><label className="field">Detalls de l'allotjament <input value={d.lodgingDetails} onChange={(e) => setDetail('lodgingDetails', e.target.value)} placeholder="Reserves, habitacions..." /></label></> : null}
             </div>
           </section>
 
@@ -142,6 +151,7 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
           <section className="form-card">
             <div className="section-heading"><span className="section-index">07</span><div><h2>Material</h2><p>La llista que comprovareu abans de sortir.</p></div></div>
             <div className="repeat-list">
+              {catalog.length ? <div className="library-picker"><span>MATERIAL DEL GRUP</span><div><select aria-label="Material del grup" defaultValue="" onChange={(event) => { addMaterial(event.target.value); event.target.value = '' }}><option value="">Afegeix material…</option>{catalog.filter((item) => !d.materials.some((entry) => entry.catalogId === item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div><small>El material triat es copia en aquest concert.</small></div> : null}
               {d.materials.map((item) => <div className="repeat-row" key={item.id}><input aria-label="Material a portar" value={item.name} onChange={(e) => setDetail('materials', d.materials.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))} placeholder="Ex. Caixa de cables" /><button type="button" className="icon-button danger-icon" aria-label="Eliminar material" onClick={() => setDetail('materials', d.materials.filter((x) => x.id !== item.id))}><Trash2 size={17} /></button></div>)}
               <button type="button" className="add-button" onClick={() => setDetail('materials', [...d.materials, { id: createId(), name: '', loaded: false }])}><Plus size={16} /> Afegir material</button>
             </div>
@@ -149,7 +159,7 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
 
           <section className="form-card">
             <div className="section-heading"><span className="section-index">08</span><div><h2>Actuació i acreditacions</h2><p>Allò que cal tenir a mà el dia del concert.</p></div></div>
-            <div className="fields"><label className="field">Setlist <textarea rows={5} value={d.setlist} onChange={(e) => setDetail('setlist', e.target.value)} placeholder="Una cançó per línia" /></label><label className="field">Invitacions i passis <textarea rows={2} value={d.passes} onChange={(e) => setDetail('passes', e.target.value)} /></label></div>
+            <div className="fields">{setlists.length ? <label className="field">Plantilla <select value={d.setlistTemplateId || ''} onChange={(e) => applySetlist(e.target.value)}><option value="">Tria una plantilla…</option>{setlists.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : null}<label className="field">Setlist <textarea rows={5} value={d.setlist} onChange={(e) => setDetail('setlist', e.target.value)} placeholder="Una cançó per línia" /></label><label className="field">Invitacions i passis <textarea rows={2} value={d.passes} onChange={(e) => setDetail('passes', e.target.value)} /></label></div>
           </section>
 
           <section className="form-card">

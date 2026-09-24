@@ -7,6 +7,7 @@ export interface ScheduleItem {
   label: string
   time: string
   place: string
+  kind?: string
 }
 
 export interface ConcertDocument {
@@ -62,7 +63,13 @@ export interface MaterialItem {
   id: string
   name: string
   loaded: boolean
+  catalogId?: string
 }
+
+export type PersonKind = 'musica' | 'tecnic' | 'manager' | 'contacte'
+export interface BandPerson { id: string; name: string; kind: PersonKind; phone: string; email: string; active: boolean }
+export interface BandMaterial { id: string; name: string; category: string; active: boolean }
+export interface SetlistTemplate { id: string; name: string; songs: string[]; active: boolean }
 
 export interface ConcertDetails {
   conditions: string
@@ -71,6 +78,7 @@ export interface ConcertDetails {
   contactPhone: string
   contactEmail: string
   team: string
+  personIds: string[]
   travel: string
   loadIn: string
   parking: string
@@ -78,10 +86,12 @@ export interface ConcertDetails {
   dinnerDetails: string
   lodging: Answer
   lodgingDetails: string
+  lodgingAddress: string
   schedule: ScheduleItem[]
   documents: ConcertDocument[]
   materials: MaterialItem[]
   setlist: string
+  setlistTemplateId?: string
   passes: string
   merchSales: number
   expenses: number
@@ -113,8 +123,8 @@ export const statusLabels: Record<ConcertStatus, string> = {
 export function emptyDetails(): ConcertDetails {
   return {
     conditions: '', cancellation: '', contactName: '', contactPhone: '', contactEmail: '',
-    team: '', travel: '', loadIn: '', parking: '', dinner: 'pendent', dinnerDetails: '',
-    lodging: 'pendent', lodgingDetails: '', schedule: [], documents: [], materials: [],
+    team: '', personIds: [], travel: '', loadIn: '', parking: '', dinner: 'pendent', dinnerDetails: '',
+    lodging: 'pendent', lodgingDetails: '', lodgingAddress: '', schedule: [], documents: [], materials: [],
     setlist: '', passes: '', merchSales: 0, expenses: 0, notes: '',
   }
 }
@@ -143,8 +153,7 @@ export function getPending(concert: Concert): string[] {
   if (concert.status === 'confirmat' && !concert.address.trim() && !concert.venue.trim()) {
     pending.push('Concretar la ubicació')
   }
-  if (d.dinner === 'si' && !d.dinnerDetails.trim()) pending.push('Concretar el sopar')
-  if (d.lodging === 'si' && !d.lodgingDetails.trim()) pending.push('Concretar l’allotjament')
+  if (d.lodging === 'si' && !d.lodgingAddress.trim()) pending.push('Concretar l’allotjament')
   for (const document of d.documents) {
     if (document.status === 'pendent' && document.name.trim()) {
       pending.push(`${document.direction === 'enviar' ? 'Enviar' : 'Rebre'} ${document.name}`)

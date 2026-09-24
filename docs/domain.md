@@ -28,4 +28,6 @@ Les vendes de marxandatge redueixen l'estoc disponible calculant `stock - vendes
 
 Les vendes de marxandatge es mostren com un total separat a Tresoreria i no creen automàticament un moviment d'ingrés. Això evita comptar dues vegades la mateixa venda; si es vol reflectir el cobrament al balanç, es registra explícitament a Tresoreria.
 
+Els recursos de banda (`BandPerson`, `BandMaterial`, `SetlistTemplate`) són catàlegs reutilitzables. La fitxa copia les seleccions al concert: modificar persones, material o una plantilla no canvia concerts anteriors. Les dades antigues de contacte, equip, material i setlist continuen sent vàlides.
+
 Quan no hi ha xarxa, es conserva una còpia local de la llista de concerts i les edicions de la fitxa es posen en una cua local; en tornar la connexió es reintenten. La cua actual és especialment pensada per al material, no és encara una sincronització offline completa de totes les entitats.

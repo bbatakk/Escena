@@ -18,7 +18,7 @@ describe('pendents derivats de la fitxa', () => {
       { id: 'a', name: 'Rider', direction: 'enviar', status: 'pendent', url: '' },
       { id: 'b', name: 'Bio', direction: 'enviar', status: 'no_cal', url: '' },
     ]
-    expect(getPending(concert)).toEqual(['Confirmar el concert', 'Concretar el sopar', 'Enviar Rider'])
+    expect(getPending(concert)).toEqual(['Confirmar el concert', 'Enviar Rider'])
     concert.details.dinnerDetails = 'Al recinte, 20:00'
     concert.details.documents[0].status = 'fet'
     expect(getPending(concert)).toEqual(['Confirmar el concert'])
@@ -41,5 +41,16 @@ describe('pendents derivats de la fitxa', () => {
     const concert = newConcert()
     concert.details.documents = [{ id: 'rider', name: 'Rider', direction: 'enviar', status: 'pendent', url: '', storagePath: 'banda/concert/rider/fitxer.pdf', fileName: 'rider.pdf' }]
     expect(getPending(concert)).toEqual(['Enviar Rider'])
+  })
+
+  it('considera el sopar resolt i demana l’adreça de l’allotjament', () => {
+    const concert = newConcert()
+    concert.status = 'confirmat'
+    concert.venue = 'Sala'
+    concert.details.dinner = 'si'
+    concert.details.lodging = 'si'
+    expect(getPending(concert)).toEqual(['Concretar l’allotjament'])
+    concert.details.lodgingAddress = 'Hotel Central, Carrer Major 1'
+    expect(getPending(concert)).toEqual([])
   })
 })
