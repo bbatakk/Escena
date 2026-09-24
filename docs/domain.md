@@ -26,7 +26,7 @@ En Supabase, columnes per dades identificatives i econòmiques bàsiques; `detai
 
 Les vendes de marxandatge redueixen l'estoc disponible calculant `stock - vendes`. La pantalla ho valida i la base de dades també té un trigger per evitar sobrepassar l'estoc en vendes simultànies.
 
-Les vendes de marxandatge es mostren com un total separat a Tresoreria i no creen automàticament un moviment d'ingrés. Això evita comptar dues vegades la mateixa venda; si es vol reflectir el cobrament al balanç, es registra explícitament a Tresoreria.
+Les vendes de marxandatge s'inclouen automàticament als ingressos totals i al balanç de Tresoreria, però continuen sent registres separats dels moviments manuals. No s'han de tornar a introduir manualment, perquè es duplicarien.
 
 Els productes de marxandatge poden tenir variants de talla, cadascuna amb estoc propi. Les vendes guarden la talla triada i redueixen l'estoc d'aquesta variant; els productes sense talles continuen utilitzant l'estoc general existent.
 
