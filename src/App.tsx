@@ -152,7 +152,10 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
 }
 
 export default function App() {
-  const [theme, setTheme] = useState<ThemeId>(() => (localStorage.getItem('escena-theme') as ThemeId) || 'live-stage')
+  const [theme, setTheme] = useState<ThemeId>(() => {
+    const stored = localStorage.getItem('escena-theme')
+    return stored === 'classic' || stored === 'live-stage' || stored === 'club' || stored === 'paper' ? stored : 'live-stage'
+  })
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(!cloudConfigured)
   const [concerts, setConcerts] = useState<Concert[]>([])
