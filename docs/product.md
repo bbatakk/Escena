@@ -21,4 +21,6 @@ Accés amb Supabase quan està configurat; demo local si no. Llista i calendari;
 2. Ampliar la PWA offline als documents, tresoreria i marxandatge; resoldre conflictes simultanis al mateix element.
 3. Comptes individuals, invitacions i permisos si l'ús real ho justifica.
 
+La migració 007 deixa preparats `role` a `band_members` i `band_invitations`, però la UI continua deliberadament amb compte compartit. No s'han d'activar permisos parcials sense dissenyar abans el flux d'invitació, acceptació i recuperació de compte.
+
 No representar les funcions dels següents lliurables com si ja estiguessin acabades.

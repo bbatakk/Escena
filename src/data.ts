@@ -21,6 +21,16 @@ const merchProductsKey = 'escena-demo-merch-products-v1'
 const merchSalesKey = 'escena-demo-merch-sales-v1'
 const offlineConcertsKey = 'escena-offline-concerts-v1'
 const offlineQueueKey = 'escena-offline-queue-v1'
+const offlineDataQueueKey = 'escena-offline-data-queue-v1'
+
+function offline(): boolean { return typeof navigator !== 'undefined' && !navigator.onLine }
+function readCache<T>(key: string): T[] { try { return JSON.parse(localStorage.getItem(key) || '[]') as T[] } catch { return [] } }
+function writeCache<T>(key: string, value: T[]): void { localStorage.setItem(key, JSON.stringify(value)) }
+function queueData(entity: 'money' | 'product' | 'sale', action: 'save' | 'delete', payload: unknown): void {
+  const queue = readCache<{ id: string; entity: string; action: string; payload: unknown }>(offlineDataQueueKey)
+  const id = typeof payload === 'string' ? payload : (payload as { id: string }).id
+  writeCache(offlineDataQueueKey, [...queue.filter((item) => !(item.entity === entity && item.id === id)), { id, entity, action, payload }])
+}
 
 function dateFromNow(days: number): string {
   const date = new Date()
@@ -175,6 +185,30 @@ export async function syncOfflineConcerts(): Promise<number> {
   return synced
 }
 
+export async function syncOfflineData(): Promise<number> {
+  if (!supabase || offline()) return 0
+  const queue = readCache<{ id: string; entity: 'money' | 'product' | 'sale'; action: 'save' | 'delete'; payload: unknown }>(offlineDataQueueKey)
+  const remaining = [...queue]
+  let synced = 0
+  for (const operation of queue) {
+    try {
+      if (operation.entity === 'money') {
+        if (operation.action === 'save') await saveMoneyMovement(operation.payload as MoneyMovement)
+        else await deleteMoneyMovement(operation.id)
+      } else if (operation.entity === 'product' && operation.action === 'save') await saveMerchProduct(operation.payload as MerchProduct)
+      else if (operation.entity === 'sale') {
+        if (operation.action === 'save') await saveMerchSale(operation.payload as MerchSale)
+        else await deleteMerchSale(operation.id)
+      }
+      const index = remaining.findIndex((item) => item.id === operation.id && item.entity === operation.entity)
+      if (index >= 0) remaining.splice(index, 1)
+      synced += 1
+    } catch { /* Keep the operation for the next reconnect. */ }
+  }
+  writeCache(offlineDataQueueKey, remaining)
+  return synced
+}
+
 export async function deleteConcert(id: string): Promise<void> {
   if (!supabase) {
     localStorage.setItem(demoKey, JSON.stringify(localConcerts().filter((item) => item.id !== id)))
@@ -292,13 +326,11 @@ interface MoneyRow { id: string; concert_id: string | null; kind: MoneyMovement[
 function fromMoneyRow(row: MoneyRow): MoneyMovement { return { id: row.id, concertId: row.concert_id || undefined, kind: row.kind, amount: Number(row.amount), date: row.date, category: row.category, note: row.note } }
 
 export async function listMoneyMovements(): Promise<MoneyMovement[]> {
-  if (!supabase) {
-    try { return JSON.parse(localStorage.getItem(moneyKey) || '[]') as MoneyMovement[] }
-    catch { return [] }
-  }
+  if (!supabase) return readCache<MoneyMovement>(moneyKey)
+  if (offline()) return readCache<MoneyMovement>(moneyKey)
   const { data, error } = await supabase.from('money_movements').select('*').order('date', { ascending: false }).order('created_at', { ascending: false })
   if (error) throw error
-  return (data as MoneyRow[]).map(fromMoneyRow)
+  const movements = (data as MoneyRow[]).map(fromMoneyRow); writeCache(moneyKey, movements); return movements
 }
 
 export async function saveMoneyMovement(movement: MoneyMovement): Promise<MoneyMovement> {
@@ -307,13 +339,14 @@ export async function saveMoneyMovement(movement: MoneyMovement): Promise<MoneyM
     localStorage.setItem(moneyKey, JSON.stringify([movement, ...all.filter((item) => item.id !== movement.id)]))
     return movement
   }
+  if (offline()) { const all = readCache<MoneyMovement>(moneyKey); const saved = { ...movement }; writeCache(moneyKey, [saved, ...all.filter((item) => item.id !== saved.id)]); queueData('money', 'save', saved); return saved }
   const { data, error } = await supabase.from('money_movements').upsert({
     id: movement.id, band_id: await bandId(), concert_id: movement.concertId || null,
     kind: movement.kind, amount: movement.amount, date: movement.date,
     category: movement.category.trim(), note: movement.note.trim(),
   }).select('*').single()
   if (error) throw error
-  return fromMoneyRow(data as MoneyRow)
+  const saved = fromMoneyRow(data as MoneyRow); const all = readCache<MoneyMovement>(moneyKey); writeCache(moneyKey, [saved, ...all.filter((item) => item.id !== saved.id)]); return saved
 }
 
 export async function deleteMoneyMovement(id: string): Promise<void> {
@@ -322,8 +355,10 @@ export async function deleteMoneyMovement(id: string): Promise<void> {
     localStorage.setItem(moneyKey, JSON.stringify(all.filter((item) => item.id !== id)))
     return
   }
+  if (offline()) { writeCache(moneyKey, readCache<MoneyMovement>(moneyKey).filter((item) => item.id !== id)); queueData('money', 'delete', id); return }
   const { error } = await supabase.from('money_movements').delete().eq('id', id)
   if (error) throw error
+  writeCache(moneyKey, readCache<MoneyMovement>(moneyKey).filter((item) => item.id !== id))
 }
 
 interface MerchProductRow { id: string; name: string; price: number; stock: number; active: boolean }
@@ -332,35 +367,38 @@ function fromMerchProduct(row: MerchProductRow): MerchProduct { return { id: row
 function fromMerchSale(row: MerchSaleRow): MerchSale { return { id: row.id, concertId: row.concert_id, productId: row.product_id, quantity: Number(row.quantity), unitPrice: Number(row.unit_price), note: row.note } }
 
 export async function listMerchProducts(): Promise<MerchProduct[]> {
-  if (!supabase) { try { return JSON.parse(localStorage.getItem(merchProductsKey) || '[]') as MerchProduct[] } catch { return [] } }
+  if (!supabase || offline()) return readCache<MerchProduct>(merchProductsKey)
   const { data, error } = await supabase.from('merch_products').select('*').order('name')
   if (error) throw error
-  return (data as MerchProductRow[]).map(fromMerchProduct)
+  const products = (data as MerchProductRow[]).map(fromMerchProduct); writeCache(merchProductsKey, products); return products
 }
 
 export async function saveMerchProduct(product: MerchProduct): Promise<MerchProduct> {
   if (!supabase) { const all = await listMerchProducts(); localStorage.setItem(merchProductsKey, JSON.stringify([...all.filter((item) => item.id !== product.id), product])); return product }
+  if (offline()) { const all = readCache<MerchProduct>(merchProductsKey); writeCache(merchProductsKey, [...all.filter((item) => item.id !== product.id), product]); queueData('product', 'save', product); return product }
   const { data, error } = await supabase.from('merch_products').upsert({ id: product.id, band_id: await bandId(), name: product.name.trim(), price: product.price, stock: product.stock, active: product.active }).select('*').single()
   if (error) throw error
-  return fromMerchProduct(data as MerchProductRow)
+  const saved = fromMerchProduct(data as MerchProductRow); const all = readCache<MerchProduct>(merchProductsKey); writeCache(merchProductsKey, [...all.filter((item) => item.id !== saved.id), saved]); return saved
 }
 
 export async function listMerchSales(): Promise<MerchSale[]> {
-  if (!supabase) { try { return JSON.parse(localStorage.getItem(merchSalesKey) || '[]') as MerchSale[] } catch { return [] } }
+  if (!supabase || offline()) return readCache<MerchSale>(merchSalesKey)
   const { data, error } = await supabase.from('merch_sales').select('*').order('created_at', { ascending: false })
   if (error) throw error
-  return (data as MerchSaleRow[]).map(fromMerchSale)
+  const sales = (data as MerchSaleRow[]).map(fromMerchSale); writeCache(merchSalesKey, sales); return sales
 }
 
 export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
   if (!supabase) { const all = await listMerchSales(); localStorage.setItem(merchSalesKey, JSON.stringify([sale, ...all.filter((item) => item.id !== sale.id)])); return sale }
+  if (offline()) { const all = readCache<MerchSale>(merchSalesKey); writeCache(merchSalesKey, [sale, ...all.filter((item) => item.id !== sale.id)]); queueData('sale', 'save', sale); return sale }
   const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim() }).select('*').single()
   if (error) throw error
-  return fromMerchSale(data as MerchSaleRow)
+  const saved = fromMerchSale(data as MerchSaleRow); const all = readCache<MerchSale>(merchSalesKey); writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); return saved
 }
 
 export async function deleteMerchSale(id: string): Promise<void> {
   if (!supabase) { const all = await listMerchSales(); localStorage.setItem(merchSalesKey, JSON.stringify(all.filter((item) => item.id !== id))); return }
+  if (offline()) { writeCache(merchSalesKey, readCache<MerchSale>(merchSalesKey).filter((item) => item.id !== id)); queueData('sale', 'delete', id); return }
   const { error } = await supabase.from('merch_sales').delete().eq('id', id)
   if (error) throw error
 }

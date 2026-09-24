@@ -7,7 +7,7 @@ import {
   UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
-import { cloudConfigured, deleteConcert, isConcertOwnedFile, listConcerts, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, syncOfflineConcerts, uploadConcertDocument } from './data'
+import { cloudConfigured, deleteConcert, isConcertOwnedFile, listConcerts, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
 import { type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels } from './model'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
@@ -180,11 +180,11 @@ export default function App() {
   }, [authReady, session?.user.id])
 
   useEffect(() => {
-    const becameOnline = () => { setOnline(true); void syncOfflineConcerts().then(() => { if (cloudConfigured && session) void listConcerts().then(setConcerts).catch(() => {}) }) }
+    const becameOnline = () => { setOnline(true); void Promise.all([syncOfflineConcerts(), syncOfflineData()]).then(() => { if (cloudConfigured && session) void listConcerts().then(setConcerts).catch(() => {}) }) }
     const becameOffline = () => setOnline(false)
     window.addEventListener('online', becameOnline)
     window.addEventListener('offline', becameOffline)
-    if (online) void syncOfflineConcerts()
+    if (online) void Promise.all([syncOfflineConcerts(), syncOfflineData()])
     return () => { window.removeEventListener('online', becameOnline); window.removeEventListener('offline', becameOffline) }
   }, [online, session])
 
