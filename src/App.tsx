@@ -93,6 +93,26 @@ function CalendarView({ concerts, onOpen, onCreate, month, setMonth }: { concert
     </div><div className="calendar-agenda"><span className="eyebrow">CONCERTS DEL MES</span>{monthlyConcerts.length ? monthlyConcerts.map((item) => <button key={item.id} type="button" onClick={() => onOpen(item.id)}><span>{formatDate(item.date, { day: 'numeric', month: 'short' })}</span><strong>{item.title}</strong><ArrowRight size={16} /></button>) : <p>Encara no hi ha concerts aquest mes.</p>}</div></div>
 }
 
+function groupConcertsByYear(concerts: Concert[], newestFirst: boolean) {
+  const groups = new Map<string, Concert[]>()
+  for (const concert of concerts) {
+    const year = concert.date.slice(0, 4) || 'sense-data'
+    groups.set(year, [...(groups.get(year) || []), concert])
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => {
+    if (a === 'sense-data') return 1
+    if (b === 'sense-data') return -1
+    return newestFirst ? b.localeCompare(a) : a.localeCompare(b)
+  })
+}
+
+function ConcertYearGroup({ year, concerts, onOpen, collapsible = false }: { year: string; concerts: Concert[]; onOpen: (id: string) => void; collapsible?: boolean }) {
+  const label = year === 'sense-data' ? 'Sense data' : year
+  const cards = concerts.map((concert) => <ConcertCard key={concert.id} concert={concert} onOpen={() => onOpen(concert.id)} />)
+  if (collapsible) return <details className="concert-year-archive"><summary><strong>{label}</strong><span>{concerts.length} {concerts.length === 1 ? 'concert' : 'concerts'}</span><ArrowRight size={15} /></summary><div className="concert-year-cards">{cards}</div></details>
+  return <section className="concert-year-section"><div className="concert-year-heading"><strong>{label}</strong><span>{concerts.length} {concerts.length === 1 ? 'concert' : 'concerts'}</span></div><div className="concert-year-cards">{cards}</div></section>
+}
+
 function HomeView({ concerts, onOpen, onNewConcert, onGoToConcerts, onGoToCalendar }: { concerts: Concert[]; onOpen: (id: string) => void; onNewConcert: () => void; onGoToConcerts: () => void; onGoToCalendar: () => void }) {
   const now = new Date()
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -221,6 +241,7 @@ export default function App() {
   const [formReturnScreen, setFormReturnScreen] = useState<Screen>('list')
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [search, setSearch] = useState('')
+  const [concertYear, setConcertYear] = useState('tots')
   const [menuOpen, setMenuOpen] = useState(false)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
 
@@ -268,11 +289,14 @@ export default function App() {
 
   const selected = concerts.find((item) => item.id === selectedId)
   const sorted = [...concerts].sort((a, b) => a.date.localeCompare(b.date))
-  const visible = sorted.filter((item) => `${item.title} ${item.venue} ${item.city}`.toLocaleLowerCase('ca').includes(search.toLocaleLowerCase('ca')))
+  const concertYears = Array.from(new Set(concerts.map((item) => item.date.slice(0, 4) || 'sense-data'))).sort((a, b) => a === 'sense-data' ? 1 : b === 'sense-data' ? -1 : b.localeCompare(a))
+  const visible = sorted.filter((item) => `${item.title} ${item.venue} ${item.city}`.toLocaleLowerCase('ca').includes(search.toLocaleLowerCase('ca')) && (concertYear === 'tots' || (item.date.slice(0, 4) || 'sense-data') === concertYear))
   const today = new Date()
   const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   const upcoming = visible.filter((item) => item.date >= todayString && item.status !== 'cancel·lat')
   const other = visible.filter((item) => item.date < todayString || item.status === 'cancel·lat')
+  const upcomingByYear = groupConcertsByYear(upcoming, false)
+  const pastByYear = groupConcertsByYear(other, true)
   const next = sorted.find((item) => item.date >= todayString && item.status !== 'cancel·lat')
   const totalPending = concerts.reduce((sum, item) => sum + getPending(item).length, 0)
 
@@ -340,8 +364,8 @@ export default function App() {
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
           <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>
           <div className="overview-strip"><div className="overview-next"><div className="overview-icon"><Music2 size={22} /></div><div><span className="eyebrow">PROPER CONCERT</span><strong>{next ? next.title : 'Encara no hi ha cap data'}</strong><small>{next ? `${formatDate(next.date)} · ${next.city || next.venue || 'Lloc per concretar'}` : 'Afegeix un concert per començar'}</small></div>{next ? <button aria-label={`Obrir ${next.title}`} onClick={() => open(next.id)} className="overview-arrow"><ArrowRight size={19} /></button> : null}</div><div className="overview-stat"><span className="eyebrow">PER RESOLDRE</span><strong>{totalPending.toString().padStart(2, '0')}</strong><small>{totalPending === 1 ? 'qüestió pendent' : 'qüestions pendents'}</small></div></div>
-          <div className="listing-header"><div className="view-tabs"><button className={screen === 'list' ? 'active-tab' : ''} onClick={() => setScreen('list')}><List size={17} /> Llista</button><button className={screen === 'calendar' ? 'active-tab' : ''} onClick={() => setScreen('calendar')}><CalendarDays size={17} /> Calendari</button></div>{screen === 'list' ? <label className="search-box"><Search size={18} /><span className="sr-only">Cerca concerts</span><input type="search" placeholder="Cerca concerts..." value={search} onChange={(e) => setSearch(e.target.value)} /></label> : null}</div>
-           {screen === 'calendar' ? <CalendarView concerts={concerts} onOpen={open} onCreate={startFormOnDate} month={month} setMonth={setMonth} /> : <div className="concert-list"><div className="list-label"><span>PROPERS CONCERTS</span><span>{upcoming.length} {upcoming.length === 1 ? 'concert' : 'concerts'}</span></div>{upcoming.length ? upcoming.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />) : <div className="empty-list"><CalendarDays size={25} /><h3>{search ? 'Cap resultat' : 'Encara no hi ha concerts propers'}</h3><p>{search ? 'Prova una altra cerca.' : 'Crea un concert i comença a reunir tota la informació.'}</p></div>}{other.length ? <><div className="list-label past-label"><span>ANTERIORS I CANCEL·LATS</span><span>{other.length}</span></div>{other.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />)}</> : null}</div>}
+           <div className="listing-header"><div className="view-tabs"><button className={screen === 'list' ? 'active-tab' : ''} onClick={() => setScreen('list')}><List size={17} /> Llista</button><button className={screen === 'calendar' ? 'active-tab' : ''} onClick={() => setScreen('calendar')}><CalendarDays size={17} /> Calendari</button></div>{screen === 'list' ? <div className="concert-list-filters"><label className="year-filter"><span className="sr-only">Filtrar concerts per any</span><select value={concertYear} onChange={(event) => setConcertYear(event.target.value)}><option value="tots">Tots els anys</option>{concertYears.map((year) => <option key={year} value={year}>{year === 'sense-data' ? 'Sense data' : year}</option>)}</select></label><label className="search-box"><Search size={18} /><span className="sr-only">Cerca concerts</span><input type="search" placeholder="Cerca concerts..." value={search} onChange={(e) => setSearch(e.target.value)} /></label></div> : null}</div>
+            {screen === 'calendar' ? <CalendarView concerts={concerts} onOpen={open} onCreate={startFormOnDate} month={month} setMonth={setMonth} /> : <div className="concert-list"><div className="list-label"><span>PROPERS CONCERTS</span><span>{upcoming.length} {upcoming.length === 1 ? 'concert' : 'concerts'}</span></div>{upcoming.length ? upcomingByYear.map(([year, items]) => <ConcertYearGroup key={year} year={year} concerts={items} onOpen={open} />) : <div className="empty-list"><CalendarDays size={25} /><h3>{search || concertYear !== 'tots' ? 'Cap resultat' : 'Encara no hi ha concerts propers'}</h3><p>{search || concertYear !== 'tots' ? 'Prova una altra cerca o any.' : 'Crea un concert i comença a reunir tota la informació.'}</p></div>}{other.length ? <><div className="list-label past-label"><span>ANTERIORS I CANCEL·LATS</span><span>{other.length}</span></div>{pastByYear.map(([year, items]) => <ConcertYearGroup key={year} year={year} concerts={items} onOpen={open} collapsible={year !== String(today.getFullYear()) && year !== 'sense-data'} />)}</> : null}</div>}
         </> : null}
       </div><footer className="app-footer"><span>Escena · Els concerts, clars.</span><span>Fet per al camí <ArrowRight size={14} /></span></footer>
     </main>
