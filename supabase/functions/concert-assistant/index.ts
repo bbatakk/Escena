@@ -16,21 +16,23 @@ type ConcertSummary = {
   feePaid: number
   pending: string[]
 }
+const dailyRequestLimit = 10
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return json({ error: 'Mètode no admès.' }, 405)
 
-  const apiKey = Deno.env.get('OPENAI_API_KEY')
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
-  if (!apiKey || !supabaseUrl || !anonKey) return json({ error: 'La IA encara no està configurada a Supabase.' }, 503)
+  if (!supabaseUrl || !anonKey) return json({ error: 'La funció d’IA encara no està configurada a Supabase.' }, 503)
 
   const authorization = request.headers.get('Authorization')
   if (!authorization) return json({ error: 'Cal iniciar sessió per utilitzar la IA.' }, 401)
   const supabase = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authorization } } })
   const { data: auth, error: authError } = await supabase.auth.getUser()
   if (authError || !auth.user) return json({ error: 'La sessió no és vàlida. Torna a entrar.' }, 401)
+  const apiKey = Deno.env.get('GEMINI_API_KEY')
+  if (!apiKey) return json({ error: 'Afegeix el secret GEMINI_API_KEY a Supabase per activar Gemini.' }, 503)
 
   try {
     const body = await request.json()
@@ -59,27 +61,35 @@ Deno.serve(async (request) => {
       ]
     } else return json({ error: 'Acció d’IA desconeguda.' }, 400)
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const { data: usage, error: usageError } = await supabase.rpc('consume_ai_request', { p_daily_limit: dailyRequestLimit })
+    if (usageError) {
+      if (usageError.message.includes('AI_DAILY_LIMIT_REACHED')) return json({ error: `Has arribat al límit gratuït de ${dailyRequestLimit} peticions d’IA avui. Torna-ho a provar demà.` }, 429)
+      console.error('AI usage limit error', usageError.message)
+      return json({ error: 'No s’ha pogut comprovar el límit diari d’IA. Revisa la migració 014.' }, 503)
+    }
+
+    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash'
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: Deno.env.get('OPENAI_MODEL') || 'gpt-4o-mini', messages, temperature: 0.2, ...(jsonMode ? { response_format: { type: 'json_object' } } : {}) }),
+      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: messages[0].content }] }, contents: [{ role: 'user', parts: [{ text: messages[1].content }] }], generationConfig: { temperature: 0.2, ...(jsonMode ? { responseMimeType: 'application/json' } : {}) } }),
     })
     const result = await response.json()
     if (!response.ok) {
       const providerMessage = typeof result?.error?.message === 'string' ? result.error.message : 'Sense més detalls del proveïdor.'
-      console.error('OpenAI API error', response.status, providerMessage)
+      console.error('Gemini API error', response.status, providerMessage)
       const message = response.status === 401
-        ? 'La clau d’OpenAI no és vàlida. Revisa el secret OPENAI_API_KEY a Supabase.'
+        ? 'La clau de Gemini no és vàlida. Revisa el secret GEMINI_API_KEY a Supabase.'
         : response.status === 429
-          ? 'OpenAI ha rebutjat la petició per límit o saldo. Revisa l’ús i la facturació del teu compte OpenAI.'
+          ? 'Gemini ha arribat al seu límit gratuït temporal. Espera una estona o revisa les quotes de Google AI Studio.'
           : response.status === 400
-            ? `OpenAI ha rebutjat el model o el format de la petició (${response.status}). Revisa OPENAI_MODEL i els logs de la funció.`
-            : `El proveïdor d’IA ha fallat (${response.status}). Revisa els logs de la funció a Supabase.`
+            ? `Gemini ha rebutjat el model o la petició (${response.status}). Revisa GEMINI_MODEL i els logs de la funció.`
+            : `Gemini ha fallat (${response.status}). Revisa els logs de la funció a Supabase.`
       return json({ error: message }, 502)
     }
-    const content = result?.choices?.[0]?.message?.content
-    if (typeof content !== 'string' || !content) return json({ error: 'La IA no ha retornat cap resposta.' }, 502)
-    return json(jsonMode ? { draft: JSON.parse(content) } : { answer: content })
+    const content = result?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('').trim()
+    if (typeof content !== 'string' || !content) return json({ error: 'Gemini no ha retornat cap resposta. Torna-ho a provar amb una petició més curta.' }, 502)
+    return json({ ...(jsonMode ? { draft: JSON.parse(content) } : { answer: content }), remainingToday: Math.max(0, dailyRequestLimit - Number(usage || 0)) })
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Error inesperat en la petició d’IA.'
     return json({ error: message }, 400)

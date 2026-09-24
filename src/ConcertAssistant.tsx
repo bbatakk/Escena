@@ -71,6 +71,7 @@ export default function ConcertAssistant({ concerts, onCreateDraft }: { concerts
   const [askBusy, setAskBusy] = useState(false)
   const [parseError, setParseError] = useState('')
   const [askError, setAskError] = useState('')
+  const [remainingToday, setRemainingToday] = useState<number | null>(null)
 
   async function parseOffer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -80,6 +81,7 @@ export default function ConcertAssistant({ concerts, onCreateDraft }: { concerts
       const data = await invokeAssistant({ action: 'parse_offer', text: offer })
       if (!data?.draft || typeof data.draft !== 'object') throw new Error('La IA no ha retornat un esborrany vàlid.')
       setDraft(makeConcertDraft(data.draft as DraftResponse))
+      if (typeof data.remainingToday === 'number') setRemainingToday(data.remainingToday)
     } catch (cause) { setParseError(cause instanceof Error ? cause.message : 'No s’ha pogut llegir la proposta.') }
     finally { setParseBusy(false) }
   }
@@ -93,6 +95,7 @@ export default function ConcertAssistant({ concerts, onCreateDraft }: { concerts
       const data = await invokeAssistant({ action: 'ask', question, concerts: context })
       if (typeof data?.answer !== 'string') throw new Error('La IA no ha retornat cap resposta.')
       setAnswer(data.answer)
+      if (typeof data.remainingToday === 'number') setRemainingToday(data.remainingToday)
     } catch (cause) { setAskError(cause instanceof Error ? cause.message : 'No s’ha pogut respondre la pregunta.') }
     finally { setAskBusy(false) }
   }
@@ -104,6 +107,6 @@ export default function ConcertAssistant({ concerts, onCreateDraft }: { concerts
       <section className="form-card assistant-card"><div className="section-heading"><span className="section-index"><FileInput size={16} /></span><div><h2>Llegeix una proposta</h2><p>Enganxa el correu o missatge del promotor i Escena prepararà una fitxa editable.</p></div></div><form className="fields" onSubmit={(event) => void parseOffer(event)}><label className="field">Text de la proposta<textarea required rows={10} maxLength={20000} value={offer} onChange={(event) => setOffer(event.target.value)} placeholder={'Hola! Ens agradaria comptar amb vosaltres el 14 de juny a la Sala X…'} /></label><div className="assistant-form-footer"><small>{offer.length.toLocaleString('ca')} / 20.000</small><button className="button button-primary" type="submit" disabled={parseBusy || !offer.trim() || !cloudConfigured}><Sparkles size={15} /> {parseBusy ? 'Llegint…' : 'Preparar esborrany'}</button></div></form>{parseError ? <p className="form-error" role="alert">{parseError}</p> : null}{draft ? <div className="assistant-draft"><span className="eyebrow">ESBORRANY PREPARAT · REVISA’L ABANS DE DESAR</span><strong>{draft.title || 'Concert sense títol'}</strong><p>{[draft.date, draft.venue, draft.city].filter(Boolean).join(' · ') || 'Falten data i ubicació'}</p>{draft.feeAmount ? <small>Catxet: {new Intl.NumberFormat('ca-ES', { style: 'currency', currency: 'EUR' }).format(draft.feeAmount)}</small> : null}<button type="button" className="button button-secondary" onClick={() => onCreateDraft(draft)}>Revisar i completar fitxa <ArrowRight size={15} /></button></div> : null}</section>
       <section className="form-card assistant-card"><div className="section-heading"><span className="section-index"><MessageCircleQuestion size={16} /></span><div><h2>Pregunta a Escena</h2><p>Consulta concerts propers, horaris generals o compromisos pendents.</p></div></div><form className="fields" onSubmit={(event) => void ask(event)}><label className="field">La teva pregunta <textarea required rows={4} maxLength={2000} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Quins concerts tenim aquest mes amb coses pendents?" /></label><div className="assistant-form-footer"><small>Només s’envien títol, data, lloc, catxet i pendents; no contactes ni notes.</small><button className="button button-primary" type="submit" disabled={askBusy || !question.trim() || !cloudConfigured}><ArrowRight size={15} /> {askBusy ? 'Pensant…' : 'Preguntar'}</button></div></form>{askError ? <p className="form-error" role="alert">{askError}</p> : null}{answer ? <div className="assistant-answer"><span className="eyebrow"><Sparkles size={13} /> RESPOSTA</span><p>{answer}</p></div> : null}</section>
     </div>
-    <p className="assistant-privacy">Les peticions s’envien a un proveïdor d’IA a través d’una funció autenticada de Supabase. Revisa sempre les dades extretes abans de desar-les.</p>
+    <p className="assistant-privacy">L’app limita Gemini a 10 peticions diàries per compte{remainingToday !== null ? ` · ${remainingToday} restants avui` : ''}, a més de les quotes gratuïtes de Google. El nivell gratuït pot utilitzar les peticions per millorar els seus productes: no hi enganxis dades especialment sensibles. Les preguntes només envien el resum de concerts indicat. Revisa sempre les dades extretes abans de desar-les.</p>
   </div>
 }
