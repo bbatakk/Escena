@@ -68,7 +68,7 @@ Deno.serve(async (request) => {
       return json({ error: 'No s’ha pogut comprovar el límit diari d’IA. Revisa la migració 014.' }, 503)
     }
 
-    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash'
+    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
@@ -82,6 +82,8 @@ Deno.serve(async (request) => {
         ? 'La clau de Gemini no és vàlida. Revisa el secret GEMINI_API_KEY a Supabase.'
         : response.status === 429
           ? 'Gemini ha arribat al seu límit gratuït temporal. Espera una estona o revisa les quotes de Google AI Studio.'
+          : response.status === 404
+            ? `El model Gemini «${model}» no està disponible. Revisa GEMINI_MODEL; el model per defecte és gemini-3.6-flash.`
           : response.status === 400
             ? `Gemini ha rebutjat el model o la petició (${response.status}). Revisa GEMINI_MODEL i els logs de la funció.`
             : `Gemini ha fallat (${response.status}). Revisa els logs de la funció a Supabase.`
