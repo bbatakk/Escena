@@ -7,8 +7,8 @@ import {
   Settings as SettingsIcon, UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
-import { cloudConfigured, deleteConcert, isConcertOwnedFile, listConcerts, listResource, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
-import { type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels } from './model'
+import { cloudConfigured, deleteConcert, deleteMerchSale, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
+import { createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type MerchProduct, type MerchSale } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
@@ -92,6 +92,10 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
   const [documentError, setDocumentError] = useState('')
   const [documentLinks, setDocumentLinks] = useState<Record<string, string>>({})
   const [people, setPeople] = useState<BandPerson[]>([])
+  const [merchProducts, setMerchProducts] = useState<MerchProduct[]>([])
+  const [merchSales, setMerchSales] = useState<MerchSale[]>([])
+  const [saleBusy, setSaleBusy] = useState(false)
+  const [saleError, setSaleError] = useState('')
   const d = concert.details
   useEffect(() => {
     let active = true
@@ -102,7 +106,7 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
     })).then((entries) => { if (active) setDocumentLinks(Object.fromEntries(entries)) })
     return () => { active = false }
   }, [concert.details.documents])
-  useEffect(() => { let active = true; listResource<BandPerson>('band_people').then((items) => { if (active) setPeople(items) }).catch(() => {}); return () => { active = false } }, [])
+  useEffect(() => { let active = true; Promise.all([listResource<BandPerson>('band_people'), listMerchProducts(), listMerchSales()]).then(([items, products, sales]) => { if (active) { setPeople(items); setMerchProducts(products); setMerchSales(sales.filter((item) => item.concertId === concert.id)) } }).catch(() => {}); return () => { active = false } }, [concert.id])
   const pending = getPending(concert)
   const sortedSchedule = [...d.schedule].filter((x) => x.time || x.label).sort((a, b) => a.time.localeCompare(b.time))
   async function toggleMaterial(id: string) {
@@ -125,6 +129,8 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
     catch (cause) { setDocumentError(cause instanceof Error ? cause.message : 'No s’ha pogut treure el fitxer.') }
     finally { setBusyDocument(null) }
   }
+  async function quickSale(product: MerchProduct) { const sold = merchSales.filter((item) => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0); if (sold >= product.stock) { setSaleError(`No queda estoc de ${product.name}.`); return } setSaleBusy(true); setSaleError(''); try { const saved = await saveMerchSale({ id: createId(), concertId: concert.id, productId: product.id, quantity: 1, unitPrice: product.price, note: '' }); setMerchSales((items) => [saved, ...items]) } catch (cause) { setSaleError(cause instanceof Error ? cause.message : 'No s’ha pogut registrar la venda.') } finally { setSaleBusy(false) } }
+  async function undoSale(sale: MerchSale) { setSaleBusy(true); setSaleError(''); try { await deleteMerchSale(sale.id); setMerchSales((items) => items.filter((item) => item.id !== sale.id)) } catch (cause) { setSaleError(cause instanceof Error ? cause.message : 'No s’ha pogut desfer la venda.') } finally { setSaleBusy(false) } }
 
   return <div className="detail-shell">
     <button className="text-button back-button" onClick={onBack}><ArrowLeft size={17} /> Tornar als concerts</button>
@@ -140,7 +146,8 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
 
       <section className="detail-section"><div className="detail-section-heading"><PackageCheck size={19} /><h2>Material a portar</h2><span className="section-counter">{d.materials.filter((item) => item.loaded).length}/{d.materials.length} carregat</span></div>{d.materials.length ? <div className="material-list">{d.materials.map((item) => <label className={`material-item ${item.loaded ? 'is-loaded' : ''}`} key={item.id}><input type="checkbox" checked={item.loaded} disabled={busyMaterial} onChange={() => void toggleMaterial(item.id)} /><span className="check-visual"><Check size={14} /></span>{item.name || 'Material sense nom'}</label>)}</div> : <p className="section-empty">Afegeix material a la fitxa per preparar la càrrega.</p>}{materialError ? <p className="form-error" role="alert">{materialError}</p> : null}</section>
 
-      <section className="detail-section"><div className="detail-section-heading"><Music2 size={19} /><h2>Actuació</h2></div>{d.setlist ? <div className="setlist">{d.setlist.split('\n').filter(Boolean).map((song, index) => <div key={index}><span>{String(index + 1).padStart(2, '0')}</span>{song}</div>)}</div> : <p className="section-empty">Encara no hi ha setlist.</p>}{d.passes ? <div className="info-rows subsection-rows"><InfoRow label="Invitacions i passis">{d.passes}</InfoRow></div> : null}</section>
+       <section className="detail-section"><div className="detail-section-heading"><Music2 size={19} /><h2>Actuació</h2></div>{d.setlist ? <div className="setlist">{d.setlist.split('\n').filter(Boolean).map((song, index) => <div key={index}><span>{String(index + 1).padStart(2, '0')}</span>{song}</div>)}</div> : <p className="section-empty">Encara no hi ha setlist.</p>}{d.passes ? <div className="info-rows subsection-rows"><InfoRow label="Invitacions i passis">{d.passes}</InfoRow></div> : null}</section>
+       <section className="detail-section merch-quick-sale"><div className="detail-section-heading"><ShoppingBag size={19} /><div><h2>Venda ràpida</h2><p>Un toc per cada producte venut.</p></div><strong>{formatMoney(merchSales.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0))}</strong></div>{merchProducts.filter((item) => item.active).length ? <div className="quick-sale-grid">{merchProducts.filter((item) => item.active).map((product) => { const sold = merchSales.filter((item) => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0); return <button type="button" className="quick-sale-product" key={product.id} disabled={saleBusy || sold >= product.stock} onClick={() => void quickSale(product)}><strong>{product.name}</strong><span>{formatMoney(product.price)}</span><small>{sold}/{product.stock} venudes</small><b>+1</b></button> })}</div> : <p className="section-empty">Afegeix productes a Marxandatge per activar la venda ràpida.</p>}{saleError ? <p className="form-error" role="alert">{saleError}</p> : null}{merchSales.length ? <div className="quick-sale-history">{merchSales.slice(0, 8).map((sale) => <div key={sale.id}><span>+{sale.quantity} · {merchProducts.find((item) => item.id === sale.productId)?.name || 'Producte eliminat'}</span><strong>{formatMoney(sale.quantity * sale.unitPrice)}</strong><button type="button" className="text-button" disabled={saleBusy} onClick={() => void undoSale(sale)}>Desfer</button></div>)}</div> : null}</section>
     </div><aside className="detail-aside">
       <section className="aside-card"><div className="aside-heading"><Navigation size={18} /><h3>Ubicació</h3></div><strong>{concert.venue || 'Lloc per concretar'}</strong>{concert.address ? <a className="address-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(concert.address)}`} target="_blank" rel="noreferrer">{concert.address} <ExternalLink size={14} /></a> : <p>Encara no hi ha adreça</p>}{concert.city ? <p>{concert.city}</p> : null}</section>
       <section className="aside-card"><div className="aside-heading"><UsersRound size={18} /><h3>Persones</h3></div>{d.contactName ? <><span className="aside-label">CONTACTE RESPONSABLE</span><strong>{d.contactName}</strong>{d.contactPhone ? <a href={`tel:${d.contactPhone}`} className="aside-contact">{d.contactPhone}</a> : null}{d.contactEmail ? <a href={`mailto:${d.contactEmail}`} className="aside-contact">{d.contactEmail}</a> : null}</> : null}{d.personIds.length ? <div className="selected-people">{d.personIds.map((id) => <span key={id}>{people.find((person) => person.id === id)?.name || 'Persona eliminada'}</span>)}</div> : null}{!d.contactName && !d.personIds.length ? <p>Encara no hi ha contacte.</p> : null}{d.team ? <><span className="aside-label team-label">NOTES D’EQUIP</span><p>{d.team}</p></> : null}</section>
