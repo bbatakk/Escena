@@ -8,6 +8,12 @@ export const supabase = cloudConfigured ? createClient(url, key) : null
 const documentBucket = 'concert-documents'
 const maxDocumentBytes = 20 * 1024 * 1024
 
+function storageErrorMessage(error: { message?: string; statusCode?: string | number }): Error {
+  const message = error.message || 'Error desconegut de Storage.'
+  const suffix = error.statusCode ? ` (${error.statusCode})` : ''
+  return new Error(`${message}${suffix}`)
+}
+
 const demoKey = 'escena-demo-concerts-v1'
 const libraryKey = 'escena-demo-library-v1'
 
@@ -153,7 +159,7 @@ export async function uploadConcertDocument(concert: Concert, documentId: string
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-90) || 'document'
   const path = `${membership.band_id}/${concert.id}/${documentId}/${crypto.randomUUID()}-${safeName}`
   const { error: uploadError } = await supabase.storage.from(documentBucket).upload(path, file, { upsert: false })
-  if (uploadError) throw uploadError
+  if (uploadError) throw storageErrorMessage(uploadError)
   const updated: Concert = {
     ...concert,
     details: {
@@ -241,7 +247,7 @@ export async function uploadBandDocument(document: BandDocument, file: File): Pr
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-90) || 'document'
   const path = `${await bandId()}/shared/${document.id}/${crypto.randomUUID()}-${safeName}`
   const { error: uploadError } = await supabase.storage.from(documentBucket).upload(path, file, { upsert: false })
-  if (uploadError) throw uploadError
+  if (uploadError) throw storageErrorMessage(uploadError)
   try { return await saveBandDocument({ ...document, storagePath: path, fileName: file.name }) }
   catch (error) { await removeConcertDocumentFile(path).catch(() => {}); throw error }
 }
