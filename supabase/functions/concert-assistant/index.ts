@@ -16,6 +16,10 @@ type ConcertSummary = {
   feePaid: number
   pending: string[]
 }
+type GeminiResponse = {
+  error?: { message?: string }
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+}
 const dailyRequestLimit = 10
 
 Deno.serve(async (request) => {
@@ -69,12 +73,19 @@ Deno.serve(async (request) => {
     }
 
     const model = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST',
-      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: messages[0].content }] }, contents: [{ role: 'user', parts: [{ text: messages[1].content }] }], generationConfig: { temperature: 0.2, ...(jsonMode ? { responseMimeType: 'application/json' } : {}) } }),
-    })
-    const result = await response.json()
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
+    const requestBody = JSON.stringify({ systemInstruction: { parts: [{ text: messages[0].content }] }, contents: [{ role: 'user', parts: [{ text: messages[1].content }] }], generationConfig: { temperature: 0.2, ...(jsonMode ? { responseMimeType: 'application/json' } : {}) } })
+    let response: Response | undefined
+    let result: GeminiResponse = {}
+    for (let attempt = 0; attempt < 2; attempt++) {
+      response = await fetch(url, { method: 'POST', headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' }, body: requestBody })
+      try { result = await response.json() } catch { result = {} }
+      if (response.status !== 503 || attempt === 1) break
+      const retryAfterSeconds = Number(response.headers.get('retry-after'))
+      const waitMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? Math.min(retryAfterSeconds * 1000, 2500) : 900
+      await new Promise((resolve) => setTimeout(resolve, waitMs))
+    }
+    if (!response) return json({ error: 'No s’ha pogut connectar amb Gemini.' }, 502)
     if (!response.ok) {
       const providerMessage = typeof result?.error?.message === 'string' ? result.error.message : 'Sense més detalls del proveïdor.'
       console.error('Gemini API error', response.status, providerMessage)
@@ -84,6 +95,8 @@ Deno.serve(async (request) => {
           ? 'Gemini ha arribat al seu límit gratuït temporal. Espera una estona o revisa les quotes de Google AI Studio.'
           : response.status === 404
             ? `El model Gemini «${model}» no està disponible. Revisa GEMINI_MODEL; el model per defecte és gemini-3.6-flash.`
+          : response.status === 503
+            ? 'Gemini continua molt carregat. Espera una mica i torna-ho a provar.'
           : response.status === 400
             ? `Gemini ha rebutjat el model o la petició (${response.status}). Revisa GEMINI_MODEL i els logs de la funció.`
             : `Gemini ha fallat (${response.status}). Revisa els logs de la funció a Supabase.`
