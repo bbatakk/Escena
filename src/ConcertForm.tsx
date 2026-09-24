@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
-import { listBandDocuments, listResource } from './data'
-import { createId, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type SetlistTemplate, statusLabels } from './model'
+import { deleteMerchSale, listBandDocuments, listMerchProducts, listMerchSales, listResource, saveMerchSale } from './data'
+import { createId, formatMoney, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type MerchProduct, type MerchSale, type SetlistTemplate, statusLabels } from './model'
 
 interface Props {
   initial: Concert
@@ -19,11 +19,17 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
   const [people, setPeople] = useState<BandPerson[]>([])
   const [catalog, setCatalog] = useState<BandMaterial[]>([])
   const [setlists, setSetlists] = useState<SetlistTemplate[]>([])
+  const [merchProducts, setMerchProducts] = useState<MerchProduct[]>([])
+  const [merchSales, setMerchSales] = useState<MerchSale[]>([])
+  const [saleProductId, setSaleProductId] = useState('')
+  const [saleQuantity, setSaleQuantity] = useState('1')
+  const [saleNote, setSaleNote] = useState('')
+  const [saleBusy, setSaleBusy] = useState(false)
   const d = concert.details
 
   useEffect(() => {
     let active = true
-    Promise.all([listBandDocuments(), listResource<BandPerson>('band_people'), listResource<BandMaterial>('band_materials'), listResource<SetlistTemplate>('setlist_templates')]).then(([documents, bandPeople, bandMaterials, templates]) => { if (active) { setLibrary(documents.filter((item) => !item.archived)); setPeople(bandPeople); setCatalog(bandMaterials); setSetlists(templates) } })
+    Promise.all([listBandDocuments(), listResource<BandPerson>('band_people'), listResource<BandMaterial>('band_materials'), listResource<SetlistTemplate>('setlist_templates'), listMerchProducts(), listMerchSales()]).then(([documents, bandPeople, bandMaterials, templates, products, sales]) => { if (active) { setLibrary(documents.filter((item) => !item.archived)); setPeople(bandPeople); setCatalog(bandMaterials); setSetlists(templates); setMerchProducts(products); setMerchSales(sales.filter((item) => item.concertId === initial.id)) } })
       .catch(() => { if (active) setLibraryError('No s’ha pogut carregar la biblioteca de la banda.') })
     return () => { active = false }
   }, [])
@@ -42,6 +48,8 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
   function addMaterial(id: string) { const item = catalog.find((entry) => entry.id === id); if (!item || d.materials.some((entry) => entry.catalogId === id)) return; setDetail('materials', [...d.materials, { id: createId(), catalogId: id, name: item.name, category: item.category, loaded: false }]) }
   function addMaterialCategory(category: string) { const selected = new Set(d.materials.map((item) => item.catalogId)); const additions = catalog.filter((item) => (item.category || 'Sense categoria') === category && !selected.has(item.id)).map((item) => ({ id: createId(), catalogId: item.id, name: item.name, category: item.category, loaded: false })); if (additions.length) setDetail('materials', [...d.materials, ...additions]) }
   function applySetlist(id: string) { const item = setlists.find((entry) => entry.id === id); if (item) { setDetail('setlist', item.songs.join('\n')); setDetail('setlistTemplateId', id) } }
+  async function addMerchSale(event: FormEvent) { event.preventDefault(); const product = merchProducts.find((item) => item.id === saleProductId); const quantity = Number(saleQuantity); if (!product || !quantity || quantity < 1) return; const sold = merchSales.filter((item) => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0); const totalSold = merchSales.length ? sold : 0; if (totalSold + quantity > product.stock) { setError(`No hi ha prou estoc de ${product.name}.`); return } setSaleBusy(true); setError(''); try { const saved = await saveMerchSale({ id: createId(), concertId: initial.id, productId: product.id, quantity, unitPrice: product.price, note: saleNote.trim() }); setMerchSales((items) => [saved, ...items]); setSaleProductId(''); setSaleQuantity('1'); setSaleNote('') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut registrar la venda.') } finally { setSaleBusy(false) } }
+  async function removeMerchSale(sale: MerchSale) { if (!window.confirm('Vols eliminar aquesta venda?')) return; setSaleBusy(true); try { await deleteMerchSale(sale.id); setMerchSales((items) => items.filter((item) => item.id !== sale.id)) } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar la venda.') } finally { setSaleBusy(false) } }
 
   function setField<K extends keyof Concert>(key: K, value: Concert[K]) {
     setConcert((prev) => ({ ...prev, [key]: value }))
@@ -163,10 +171,11 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
             <div className="fields">{setlists.length ? <div className="library-picker"><span>PLANTILLES DE SETLIST</span><div><select aria-label="Plantilla de setlist" value={d.setlistTemplateId || ''} onChange={(e) => applySetlist(e.target.value)}><option value="">Tria una plantilla…</option>{setlists.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.songs.length} cançons</option>)}</select></div><small>En triar-la, el repertori es copia aquí i després el pots ajustar per aquest concert.</small></div> : null}<label className="field">Setlist <textarea rows={5} value={d.setlist} onChange={(e) => setDetail('setlist', e.target.value)} placeholder="Una cançó per línia" /></label><label className="field">Invitacions i passis <textarea rows={2} value={d.passes} onChange={(e) => setDetail('passes', e.target.value)} /></label></div>
           </section>
 
-          <section className="form-card wide-card dynamic-card">
-            <div className="section-heading"><span className="section-index">09</span><div><h2>Tancament</h2><p>Imports de resum d'aquest concert.</p></div></div>
-            <div className="fields two-col"><label className="field">Catxet cobrat (€) <input type="number" min="0" step="0.01" value={concert.feePaid} onChange={(e) => setField('feePaid', Number(e.target.value))} /></label><label className="field">Vendes de merxandatge (€) <input type="number" min="0" step="0.01" value={d.merchSales} onChange={(e) => setDetail('merchSales', Number(e.target.value))} /></label><label className="field">Despeses (€) <input type="number" min="0" step="0.01" value={d.expenses} onChange={(e) => setDetail('expenses', Number(e.target.value))} /></label><label className="field field-span">Notes i incidències <textarea rows={3} value={d.notes} onChange={(e) => setDetail('notes', e.target.value)} /></label></div>
-          </section>
+           <section className="form-card wide-card dynamic-card">
+             <div className="section-heading"><span className="section-index">09</span><div><h2>Tancament</h2><p>Imports de resum d'aquest concert.</p></div></div>
+             <div className="fields two-col"><label className="field">Catxet cobrat (€) <input type="number" min="0" step="0.01" value={concert.feePaid} onChange={(e) => setField('feePaid', Number(e.target.value))} /></label><label className="field">Vendes de merxandatge (€) <input type="number" min="0" step="0.01" value={d.merchSales} onChange={(e) => setDetail('merchSales', Number(e.target.value))} /></label><label className="field">Despeses (€) <input type="number" min="0" step="0.01" value={d.expenses} onChange={(e) => setDetail('expenses', Number(e.target.value))} /></label><label className="field field-span">Notes i incidències <textarea rows={3} value={d.notes} onChange={(e) => setDetail('notes', e.target.value)} /></label></div>
+             <div className="concert-sales"><div className="concert-sales-heading"><div><span className="eyebrow">VENDA D’AQUEST CONCERT</span><h3>Marxandatge</h3></div><strong>{formatMoney(merchSales.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0))}</strong></div>{merchProducts.length ? <form className="concert-sale-form" onSubmit={(event) => void addMerchSale(event)}><select required value={saleProductId} onChange={(event) => setSaleProductId(event.target.value)}><option value="">Tria un producte…</option>{merchProducts.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name} · {formatMoney(item.price)}</option>)}</select><input required type="number" min="1" step="1" value={saleQuantity} onChange={(event) => setSaleQuantity(event.target.value)} aria-label="Quantitat" /><input value={saleNote} onChange={(event) => setSaleNote(event.target.value)} placeholder="Nota opcional" aria-label="Nota de venda" /><button type="submit" className="button button-secondary" disabled={saleBusy}><Plus size={15} /> Registrar venda</button></form> : <p className="section-empty">Afegeix productes a Marxandatge per registrar vendes.</p>}{merchSales.length ? <div className="concert-sales-list">{merchSales.map((sale) => <div key={sale.id}><span>{sale.quantity} × {merchProducts.find((item) => item.id === sale.productId)?.name || 'Producte eliminat'}</span><small>{sale.note || 'Sense nota'}</small><strong>{formatMoney(sale.quantity * sale.unitPrice)}</strong><button type="button" className="icon-button danger-icon" disabled={saleBusy} aria-label="Eliminar venda" onClick={() => void removeMerchSale(sale)}><Trash2 size={15} /></button></div>)}</div> : null}</div>
+           </section>
         </div>
         <div className="form-actions">{error ? <p className="form-error" role="alert">{error}</p> : null}<button type="button" className="button button-secondary" onClick={onCancel}>Cancel·lar</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? 'Desant…' : 'Desar concert'}</button></div>
       </form>
