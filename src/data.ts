@@ -26,6 +26,44 @@ const peopleKey = 'escena-demo-people-v1'
 const materialsKey = 'escena-demo-materials-v1'
 const setlistsKey = 'escena-demo-setlists-v1'
 
+export const backupVersion = 1
+export interface AppBackup {
+  version: number
+  exportedAt: string
+  theme?: string
+  concerts: Concert[]
+  library: BandDocument[]
+  money: MoneyMovement[]
+  merchProducts: MerchProduct[]
+  merchSales: MerchSale[]
+  people: BandPerson[]
+  materials: BandMaterial[]
+  setlists: SetlistTemplate[]
+}
+
+export async function exportBackup(): Promise<AppBackup> {
+  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listResource<BandPerson>('band_people'), listResource<BandMaterial>('band_materials'), listResource<SetlistTemplate>('setlist_templates')])
+  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, concerts, library, money, merchProducts, merchSales, people, materials, setlists }
+}
+
+export function validateBackup(value: unknown): value is AppBackup {
+  if (!value || typeof value !== 'object') return false
+  const backup = value as Partial<AppBackup>
+  return backup.version === backupVersion && Array.isArray(backup.concerts) && Array.isArray(backup.library) && Array.isArray(backup.money) && Array.isArray(backup.merchProducts) && Array.isArray(backup.merchSales) && Array.isArray(backup.people) && Array.isArray(backup.materials) && Array.isArray(backup.setlists)
+}
+
+export function importLocalBackup(backup: AppBackup): void {
+  localStorage.setItem(demoKey, JSON.stringify(backup.concerts))
+  localStorage.setItem(libraryKey, JSON.stringify(backup.library))
+  localStorage.setItem(moneyKey, JSON.stringify(backup.money))
+  localStorage.setItem(merchProductsKey, JSON.stringify(backup.merchProducts))
+  localStorage.setItem(merchSalesKey, JSON.stringify(backup.merchSales))
+  localStorage.setItem(peopleKey, JSON.stringify(backup.people))
+  localStorage.setItem(materialsKey, JSON.stringify(backup.materials))
+  localStorage.setItem(setlistsKey, JSON.stringify(backup.setlists))
+  if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
+}
+
 function offline(): boolean { return typeof navigator !== 'undefined' && !navigator.onLine }
 function readCache<T>(key: string): T[] { try { return JSON.parse(localStorage.getItem(key) || '[]') as T[] } catch { return [] } }
 function writeCache<T>(key: string, value: T[]): void { localStorage.setItem(key, JSON.stringify(value)) }

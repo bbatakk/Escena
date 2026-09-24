@@ -268,7 +268,7 @@ export default function App() {
          {screen === 'people' ? <Suspense fallback={<div className="content-loading">Carregant persones…</div>}><BandPeople /></Suspense> : null}
          {screen === 'materials' ? <Suspense fallback={<div className="content-loading">Carregant material…</div>}><BandMaterials /></Suspense> : null}
          {screen === 'setlists' ? <Suspense fallback={<div className="content-loading">Carregant setlists…</div>}><Setlists /></Suspense> : null}
-         {screen === 'settings' ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} /> : null}
+         {screen === 'settings' ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} /> : null}
         {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate('list')} /> : null}
         {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
