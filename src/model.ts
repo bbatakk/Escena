@@ -17,6 +17,16 @@ export interface ConcertDocument {
   url: string
   storagePath?: string
   fileName?: string
+  libraryId?: string
+}
+
+export interface BandDocument {
+  id: string
+  name: string
+  url: string
+  storagePath?: string
+  fileName?: string
+  archived: boolean
 }
 
 export interface MaterialItem {

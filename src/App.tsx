@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
@@ -7,10 +7,11 @@ import {
   UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
-import { cloudConfigured, deleteConcert, listConcerts, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, uploadConcertDocument } from './data'
+import { cloudConfigured, deleteConcert, isConcertOwnedFile, listConcerts, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, uploadConcertDocument } from './data'
 import { type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels } from './model'
 
-type Screen = 'list' | 'calendar' | 'detail' | 'form'
+const BandLibrary = lazy(() => import('./BandLibrary'))
+type Screen = 'list' | 'calendar' | 'detail' | 'form' | 'library'
 
 function safeLink(value: string): string | null {
   try {
@@ -196,14 +197,14 @@ export default function App() {
     const previous = concerts.find((existing) => existing.id === saved.id)
     const retained = new Set(saved.details.documents.map((doc) => doc.storagePath))
     for (const doc of previous?.details.documents ?? []) {
-      if (doc.storagePath && !retained.has(doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
+      if (doc.storagePath && isConcertOwnedFile(saved, doc.storagePath) && !retained.has(doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
     }
     setConcerts((prev) => [...prev.filter((existing) => existing.id !== saved.id), saved])
     open(saved.id)
   }
   async function remove() {
     if (!selected || !window.confirm(`Vols eliminar «${selected.title}»? Aquesta acció no es pot desfer.`)) return
-    try { await deleteConcert(selected.id); for (const doc of selected.details.documents) { if (doc.storagePath) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
+    try { await deleteConcert(selected.id); for (const doc of selected.details.documents) { if (doc.storagePath && isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
   }
   async function toggleMaterial(id: string) {
     if (!selected) return
@@ -223,20 +224,21 @@ export default function App() {
     const changed: Concert = { ...selected, details: { ...selected.details, documents: selected.details.documents.map((item) => item.id === id ? { ...item, storagePath: undefined, fileName: undefined } : item) } }
     const saved = await saveConcert(changed)
     setConcerts((prev) => prev.map((item) => item.id === saved.id ? saved : item))
-    void removeConcertDocumentFile(doc.storagePath).catch(() => {})
+    if (isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
   }
 
   return <div className="app-layout">
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">EL TEU ESPAI</div><div className="workspace-name"><div className="workspace-avatar">B</div><span>La nostra banda</span><MoreHorizontal size={16} /></div>
-      <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'list' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button></nav>
+      <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'list' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button></nav>
       <div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><CircleHelp size={18} /></span><strong>Tot sota control</strong><p>Una fitxa per concert. Cap detall perdut pel camí.</p></div><div className="sidebar-account"><div className="account-avatar">{session?.user.email?.[0].toUpperCase() || 'D'}</div><div><strong>{session ? 'Compte compartit' : 'Mode demostració'}</strong><span>{session?.user.email || 'Dades només en aquest navegador'}</span></div>{session && supabase ? <button type="button" className="logout-button" onClick={() => void supabase?.auth.signOut()}>Sortir</button> : null}</div></div>
     </aside>
     {menuOpen ? <button className="mobile-overlay" aria-label="Tancar menú" onClick={() => setMenuOpen(false)} /> : null}
-    <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'calendar' ? 'Calendari' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? 'EN LÍNIA' : 'DEMO LOCAL'} <span className="online-dot" /></span></header>
+    <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'calendar' ? 'Calendari' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? 'EN LÍNIA' : 'DEMO LOCAL'} <span className="online-dot" /></span></header>
       <div className="content-area">
         {error ? <div className="global-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Tancar avís"><X size={16} /></button></div> : null}
         {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
         {loading ? <div className="content-loading">Carregant concerts…</div> : null}
+        {screen === 'library' ? <Suspense fallback={<div className="content-loading">Carregant documents…</div>}><BandLibrary /></Suspense> : null}
         {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate('list')} /> : null}
         {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>

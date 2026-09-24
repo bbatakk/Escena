@@ -10,6 +10,8 @@ Sopar/allotjament: **pendent de saber / sí / no**. Un «sí» sense detalls és
 
 Un document també pot tenir `storagePath` i `fileName`: el fitxer és al bucket privat `concert-documents` sota `band_id/concert_id/document_id/`. Una URL temporal signada permet obrir-lo només després d'autenticar-se. Pujar un fitxer no equival a enviar-lo o rebre'l; els pendents segueixen derivant-se de l'estat del document. La pujada només es fa després de desar la fitxa.
 
+`BandDocument` és un recurs reutilitzable de la banda (nom, enllaç i/o fitxer privat); els seus fitxers viuen a `band_id/shared/document_id/`. Incorporar-lo a un concert en copia les referències i en crea una entrada amb estat propi, inicialment «pendent d'enviar». Els fitxers compartits no s'eliminen quan es treu l'entrada d'un concert; arxivar el recurs tampoc no invalida concerts previs. Si el recurs se substitueix, les fitxes anteriors conserven la versió anterior.
+
 Horaris: entrades lliures amb hora, nom i lloc; no hi ha una seqüència fixa. Material: entrades del concert amb `loaded` per fer la comprovació física de càrrega.
 
 ## Pendents derivats

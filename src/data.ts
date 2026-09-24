@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { type Concert, emptyDetails } from './model'
+import { type BandDocument, type Concert, emptyDetails } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -9,6 +9,7 @@ const documentBucket = 'concert-documents'
 const maxDocumentBytes = 20 * 1024 * 1024
 
 const demoKey = 'escena-demo-concerts-v1'
+const libraryKey = 'escena-demo-library-v1'
 
 function dateFromNow(days: number): string {
   const date = new Date()
@@ -164,7 +165,7 @@ export async function uploadConcertDocument(concert: Concert, documentId: string
   }
   try {
     const saved = await saveConcert(updated)
-    if (document.storagePath) void removeConcertDocumentFile(document.storagePath).catch(() => {})
+    if (document.storagePath && isConcertOwnedFile(concert, document.storagePath)) void removeConcertDocumentFile(document.storagePath).catch(() => {})
     return saved
   } catch (error) {
     await removeConcertDocumentFile(path).catch(() => {})
@@ -178,9 +179,69 @@ export async function removeConcertDocumentFile(path: string): Promise<void> {
   if (error) throw error
 }
 
+export function isConcertOwnedFile(concert: Concert, path: string): boolean {
+  return path.split('/')[1] === concert.id
+}
+
 export async function signedDocumentUrl(path: string): Promise<string> {
   if (!supabase) throw new Error('Aquest fitxer no està disponible en mode demostració.')
   const { data, error } = await supabase.storage.from(documentBucket).createSignedUrl(path, 60 * 60)
   if (error) throw error
   return data.signedUrl
+}
+
+interface LibraryRow {
+  id: string
+  name: string
+  url: string
+  storage_path: string | null
+  file_name: string | null
+  archived: boolean
+}
+
+function fromLibraryRow(row: LibraryRow): BandDocument {
+  return { id: row.id, name: row.name, url: row.url, storagePath: row.storage_path || undefined, fileName: row.file_name || undefined, archived: row.archived }
+}
+
+export async function listBandDocuments(): Promise<BandDocument[]> {
+  if (!supabase) {
+    try { return JSON.parse(localStorage.getItem(libraryKey) || '[]') as BandDocument[] }
+    catch { return [] }
+  }
+  const { data, error } = await supabase.from('band_documents').select('*').order('created_at', { ascending: true })
+  if (error) throw error
+  return (data as LibraryRow[]).map(fromLibraryRow)
+}
+
+async function bandId(): Promise<string> {
+  if (!supabase) throw new Error('Cal connectar Supabase.')
+  const { data, error } = await supabase.from('band_members').select('band_id').single()
+  if (error || !data) throw error ?? new Error('No s’ha trobat l’espai de la banda.')
+  return data.band_id as string
+}
+
+export async function saveBandDocument(document: BandDocument): Promise<BandDocument> {
+  if (!supabase) {
+    const all = await listBandDocuments()
+    localStorage.setItem(libraryKey, JSON.stringify([...all.filter((item) => item.id !== document.id), document]))
+    return document
+  }
+  const { data, error } = await supabase.from('band_documents').upsert({
+    id: document.id, band_id: await bandId(), name: document.name.trim(), url: document.url.trim(),
+    storage_path: document.storagePath ?? null, file_name: document.fileName ?? null,
+    archived: document.archived,
+  }).select('*').single()
+  if (error) throw error
+  return fromLibraryRow(data as LibraryRow)
+}
+
+export async function uploadBandDocument(document: BandDocument, file: File): Promise<BandDocument> {
+  if (!supabase) throw new Error('La pujada de fitxers només està disponible amb Supabase.')
+  if (file.size > maxDocumentBytes) throw new Error('El fitxer no pot superar els 20 MB.')
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-90) || 'document'
+  const path = `${await bandId()}/shared/${document.id}/${crypto.randomUUID()}-${safeName}`
+  const { error: uploadError } = await supabase.storage.from(documentBucket).upload(path, file, { upsert: false })
+  if (uploadError) throw uploadError
+  try { return await saveBandDocument({ ...document, storagePath: path, fileName: file.name }) }
+  catch (error) { await removeConcertDocumentFile(path).catch(() => {}); throw error }
 }

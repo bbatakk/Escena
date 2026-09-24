@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
-import { createId, type Concert, type ConcertDetails, statusLabels } from './model'
+import { listBandDocuments } from './data'
+import { createId, type BandDocument, type Concert, type ConcertDetails, statusLabels } from './model'
 
 interface Props {
   initial: Concert
@@ -12,7 +13,27 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
   const [concert, setConcert] = useState<Concert>(initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [library, setLibrary] = useState<BandDocument[]>([])
+  const [libraryError, setLibraryError] = useState('')
+  const [selectedLibraryId, setSelectedLibraryId] = useState('')
   const d = concert.details
+
+  useEffect(() => {
+    let active = true
+    listBandDocuments().then((items) => { if (active) setLibrary(items.filter((item) => !item.archived)) })
+      .catch(() => { if (active) setLibraryError('No s’ha pogut carregar la biblioteca de la banda.') })
+    return () => { active = false }
+  }, [])
+
+  function addFromLibrary() {
+    const selected = library.find((item) => item.id === selectedLibraryId)
+    if (!selected || d.documents.some((item) => item.libraryId === selected.id)) return
+    setDetail('documents', [...d.documents, {
+      id: createId(), libraryId: selected.id, name: selected.name, direction: 'enviar', status: 'pendent',
+      url: selected.url, storagePath: selected.storagePath, fileName: selected.fileName,
+    }])
+    setSelectedLibraryId('')
+  }
 
   function setField<K extends keyof Concert>(key: K, value: Concert[K]) {
     setConcert((prev) => ({ ...prev, [key]: value }))
@@ -106,6 +127,8 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
           <section className="form-card">
             <div className="section-heading"><span className="section-index">06</span><div><h2>Documents</h2><p>Registra què s'ha d'enviar o rebre. Després de desar, podràs adjuntar-hi un fitxer.</p></div></div>
             <div className="repeat-list">
+              {library.length ? <div className="library-picker"><span>DOCUMENTS DE LA BANDA</span><div><select aria-label="Document de la banda" value={selectedLibraryId} onChange={(event) => setSelectedLibraryId(event.target.value)}><option value="">Tria un document…</option>{library.filter((item) => !d.documents.some((doc) => doc.libraryId === item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" className="button button-secondary" disabled={!selectedLibraryId} onClick={addFromLibrary}><Plus size={15} /> Afegir</button></div><small>S'afegirà com a pendent d'enviar. Pots canviar-ho després.</small></div> : null}
+              {libraryError ? <p className="form-error" role="alert">{libraryError}</p> : null}
               {d.documents.map((doc) => <div className="repeat-entry" key={doc.id}>
                 <div className="repeat-row"><input aria-label="Nom del document" value={doc.name} onChange={(e) => setDetail('documents', d.documents.map((x) => x.id === doc.id ? { ...x, name: e.target.value } : x))} placeholder="Rider, full de ruta..." /><button type="button" className="icon-button danger-icon" aria-label="Eliminar document" onClick={() => setDetail('documents', d.documents.filter((x) => x.id !== doc.id))}><Trash2 size={17} /></button></div>
                 <div className="two-col"><label className="field">Acció <select value={doc.direction} onChange={(e) => setDetail('documents', d.documents.map((x) => x.id === doc.id ? { ...x, direction: e.target.value as typeof doc.direction } : x))}><option value="enviar">Enviar</option><option value="rebre">Rebre</option></select></label><label className="field">Situació <select value={doc.status} onChange={(e) => setDetail('documents', d.documents.map((x) => x.id === doc.id ? { ...x, status: e.target.value as typeof doc.status } : x))}><option value="pendent">Pendent</option><option value="fet">{doc.direction === 'enviar' ? 'Enviat' : 'Rebut'}</option><option value="no_cal">No cal</option></select></label></div>
