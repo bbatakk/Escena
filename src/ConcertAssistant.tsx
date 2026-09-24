@@ -17,6 +17,23 @@ type DraftResponse = {
 function text(value: unknown): string { return typeof value === 'string' ? value.trim() : '' }
 function validAnswer(value: unknown): 'pendent' | 'si' | 'no' { return value === 'si' || value === 'no' ? value : 'pendent' }
 
+async function invokeAssistant(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!supabase) throw new Error('Connecta Supabase per utilitzar l’assistent.')
+  const { data, error } = await supabase.functions.invoke('concert-assistant', { body })
+  if (error) {
+    const response = (error as Error & { context?: Response }).context
+    if (response) {
+      try {
+        const payload = await response.clone().json() as { error?: unknown }
+        if (typeof payload.error === 'string') throw new Error(payload.error)
+      } catch (cause) { if (cause instanceof Error && cause.message !== 'Unexpected end of JSON input') throw cause }
+    }
+    throw error
+  }
+  if (data?.error && typeof data.error === 'string') throw new Error(data.error)
+  return data as Record<string, unknown>
+}
+
 function makeConcertDraft(value: DraftResponse): Concert {
   const concert = newConcert()
   concert.title = text(value.title)
@@ -60,8 +77,7 @@ export default function ConcertAssistant({ concerts, onCreateDraft }: { concerts
     if (!supabase || !cloudConfigured) { setParseError('Connecta Supabase i configura la funció d’IA per utilitzar aquesta eina.'); return }
     setParseBusy(true); setParseError(''); setDraft(null)
     try {
-      const { data, error } = await supabase.functions.invoke('concert-assistant', { body: { action: 'parse_offer', text: offer } })
-      if (error) throw error
+      const data = await invokeAssistant({ action: 'parse_offer', text: offer })
       if (!data?.draft || typeof data.draft !== 'object') throw new Error('La IA no ha retornat un esborrany vàlid.')
       setDraft(makeConcertDraft(data.draft as DraftResponse))
     } catch (cause) { setParseError(cause instanceof Error ? cause.message : 'No s’ha pogut llegir la proposta.') }
@@ -74,8 +90,7 @@ export default function ConcertAssistant({ concerts, onCreateDraft }: { concerts
     setAskBusy(true); setAskError(''); setAnswer('')
     const context = concerts.map((concert) => ({ title: concert.title, date: concert.date, status: statusLabels[concert.status], venue: concert.venue, city: concert.city, feeAmount: concert.feeAmount, feePaid: concert.feePaid, pending: getPending(concert) }))
     try {
-      const { data, error } = await supabase.functions.invoke('concert-assistant', { body: { action: 'ask', question, concerts: context } })
-      if (error) throw error
+      const data = await invokeAssistant({ action: 'ask', question, concerts: context })
       if (typeof data?.answer !== 'string') throw new Error('La IA no ha retornat cap resposta.')
       setAnswer(data.answer)
     } catch (cause) { setAskError(cause instanceof Error ? cause.message : 'No s’ha pogut respondre la pregunta.') }

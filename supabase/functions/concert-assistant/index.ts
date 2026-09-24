@@ -65,7 +65,18 @@ Deno.serve(async (request) => {
       body: JSON.stringify({ model: Deno.env.get('OPENAI_MODEL') || 'gpt-4o-mini', messages, temperature: 0.2, ...(jsonMode ? { response_format: { type: 'json_object' } } : {}) }),
     })
     const result = await response.json()
-    if (!response.ok) return json({ error: 'El servei d’IA no ha pogut processar la petició.' }, 502)
+    if (!response.ok) {
+      const providerMessage = typeof result?.error?.message === 'string' ? result.error.message : 'Sense més detalls del proveïdor.'
+      console.error('OpenAI API error', response.status, providerMessage)
+      const message = response.status === 401
+        ? 'La clau d’OpenAI no és vàlida. Revisa el secret OPENAI_API_KEY a Supabase.'
+        : response.status === 429
+          ? 'OpenAI ha rebutjat la petició per límit o saldo. Revisa l’ús i la facturació del teu compte OpenAI.'
+          : response.status === 400
+            ? `OpenAI ha rebutjat el model o el format de la petició (${response.status}). Revisa OPENAI_MODEL i els logs de la funció.`
+            : `El proveïdor d’IA ha fallat (${response.status}). Revisa els logs de la funció a Supabase.`
+      return json({ error: message }, 502)
+    }
     const content = result?.choices?.[0]?.message?.content
     if (typeof content !== 'string' || !content) return json({ error: 'La IA no ha retornat cap resposta.' }, 502)
     return json(jsonMode ? { draft: JSON.parse(content) } : { answer: content })
