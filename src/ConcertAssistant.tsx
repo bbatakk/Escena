@@ -96,8 +96,10 @@ export default function ConcertAssistant({ concerts, onCreateDraft }: { concerts
     if (!supabase || !cloudConfigured) { setAskError('Connecta Supabase i configura la funció d’IA per utilitzar aquesta eina.'); return }
     setAskBusy(true); setAskError(''); setAnswer('')
     const context = concerts.map((concert) => ({ title: concert.title, date: concert.date, status: statusLabels[concert.status], venue: concert.venue, city: concert.city, feeAmount: concert.feeAmount, feePaid: concert.feePaid, pending: getPending(concert) }))
+    const now = new Date()
+    const referenceDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     try {
-      const data = await invokeAssistant({ action: 'ask', question, concerts: context })
+      const data = await invokeAssistant({ action: 'ask', question, referenceDate, concerts: context })
       if (typeof data?.answer !== 'string') throw new Error('La IA no ha retornat cap resposta.')
       setAnswer(data.answer)
       if (typeof data.remainingToday === 'number') setRemainingToday(data.remainingToday)
