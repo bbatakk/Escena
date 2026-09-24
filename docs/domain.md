@@ -8,6 +8,8 @@ Estats del concert: **en converses → reservat → confirmat → realitzat**, a
 
 Sopar/allotjament: **pendent de saber / sí / no**. Un «sí» sense detalls és informació incompleta; un «no» no és un pendent. Documents: direcció **enviar/rebre** i estat **pendent/fet/no cal**. L'enllaç, quan existeix, és a un fitxer allotjat en un servei extern; «fet» és una confirmació de la banda, no una comprovació automàtica de lliurament.
 
+Un document també pot tenir `storagePath` i `fileName`: el fitxer és al bucket privat `concert-documents` sota `band_id/concert_id/document_id/`. Una URL temporal signada permet obrir-lo només després d'autenticar-se. Pujar un fitxer no equival a enviar-lo o rebre'l; els pendents segueixen derivant-se de l'estat del document. La pujada només es fa després de desar la fitxa.
+
 Horaris: entrades lliures amb hora, nom i lloc; no hi ha una seqüència fixa. Material: entrades del concert amb `loaded` per fer la comprovació física de càrrega.
 
 ## Pendents derivats

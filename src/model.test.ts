@@ -36,4 +36,10 @@ describe('pendents derivats de la fitxa', () => {
     concert.feePaid = 0
     expect(getPending(concert)).toEqual([])
   })
+
+  it('adjuntar un fitxer no vol dir que el document ja s’hagi enviat', () => {
+    const concert = newConcert()
+    concert.details.documents = [{ id: 'rider', name: 'Rider', direction: 'enviar', status: 'pendent', url: '', storagePath: 'banda/concert/rider/fitxer.pdf', fileName: 'rider.pdf' }]
+    expect(getPending(concert)).toEqual(['Enviar Rider'])
+  })
 })

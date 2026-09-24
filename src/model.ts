@@ -15,6 +15,8 @@ export interface ConcertDocument {
   direction: 'enviar' | 'rebre'
   status: DocumentStatus
   url: string
+  storagePath?: string
+  fileName?: string
 }
 
 export interface MaterialItem {

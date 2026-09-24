@@ -3,11 +3,11 @@ import type { Session } from '@supabase/supabase-js'
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
   CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu, MoreHorizontal,
-  Music2, Navigation, PackageCheck, Pencil, Plus, Search, Ticket, Trash2,
+  Music2, Navigation, PackageCheck, Paperclip, Pencil, Plus, Search, Ticket, Trash2,
   UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
-import { cloudConfigured, deleteConcert, listConcerts, saveConcert, supabase } from './data'
+import { cloudConfigured, deleteConcert, listConcerts, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, uploadConcertDocument } from './data'
 import { type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels } from './model'
 
 type Screen = 'list' | 'calendar' | 'detail' | 'form'
@@ -32,7 +32,7 @@ function AuthScreen() {
     setWorking(true)
     setMessage('')
     const result = creating
-      ? await supabase.auth.signUp({ email, password })
+      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
       : await supabase.auth.signInWithPassword({ email, password })
     setWorking(false)
     if (result.error) setMessage(result.error.message)
@@ -78,16 +78,43 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   return <div className="info-row"><span>{label}</span><strong>{children || '—'}</strong></div>
 }
 
-function Detail({ concert, onBack, onEdit, onDelete, onToggle }: { concert: Concert; onBack: () => void; onEdit: () => void; onDelete: () => void; onToggle: (id: string) => Promise<void> }) {
+function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemoveFile }: { concert: Concert; onBack: () => void; onEdit: () => void; onDelete: () => void; onToggle: (id: string) => Promise<void>; onUpload: (id: string, file: File) => Promise<void>; onRemoveFile: (id: string) => Promise<void> }) {
   const [busyMaterial, setBusyMaterial] = useState(false)
   const [materialError, setMaterialError] = useState('')
+  const [busyDocument, setBusyDocument] = useState<string | null>(null)
+  const [documentError, setDocumentError] = useState('')
+  const [documentLinks, setDocumentLinks] = useState<Record<string, string>>({})
   const d = concert.details
+  useEffect(() => {
+    let active = true
+    const files = concert.details.documents.filter((doc) => doc.storagePath)
+    void Promise.all(files.map(async (doc) => {
+      try { return [doc.id, await signedDocumentUrl(doc.storagePath!)] as const }
+      catch { return [doc.id, ''] as const }
+    })).then((entries) => { if (active) setDocumentLinks(Object.fromEntries(entries)) })
+    return () => { active = false }
+  }, [concert.details.documents])
   const pending = getPending(concert)
   const sortedSchedule = [...d.schedule].filter((x) => x.time || x.label).sort((a, b) => a.time.localeCompare(b.time))
   async function toggleMaterial(id: string) {
     setBusyMaterial(true)
     setMaterialError('')
     try { await onToggle(id) } catch (cause) { setMaterialError(cause instanceof Error ? cause.message : 'No s’ha pogut desar el canvi.') } finally { setBusyMaterial(false) }
+  }
+  async function upload(id: string, file?: File) {
+    if (!file) return
+    setBusyDocument(id)
+    setDocumentError('')
+    try { await onUpload(id, file) }
+    catch (cause) { setDocumentError(cause instanceof Error ? cause.message : 'No s’ha pogut pujar el fitxer.') }
+    finally { setBusyDocument(null) }
+  }
+  async function removeFile(id: string) {
+    setBusyDocument(id)
+    setDocumentError('')
+    try { await onRemoveFile(id) }
+    catch (cause) { setDocumentError(cause instanceof Error ? cause.message : 'No s’ha pogut treure el fitxer.') }
+    finally { setBusyDocument(null) }
   }
 
   return <div className="detail-shell">
@@ -100,7 +127,7 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle }: { concert: Conc
 
       <section className="detail-section"><div className="detail-section-heading"><Clock3 size={19} /><h2>Horaris i logística</h2></div>{sortedSchedule.length ? <div className="timeline">{sortedSchedule.map((item) => <div className="timeline-item" key={item.id}><span className="timeline-time">{item.time || '—'}</span><span className="timeline-line" /><div><strong>{item.label || 'Sense nom'}</strong>{item.place ? <p>{item.place}</p> : null}</div></div>)}</div> : <p className="section-empty">Encara no hi ha horaris afegits.</p>}{d.travel || d.loadIn || d.parking ? <div className="info-rows subsection-rows">{d.travel ? <InfoRow label="Desplaçament">{d.travel}</InfoRow> : null}{d.loadIn ? <InfoRow label="Accés de càrrega">{d.loadIn}</InfoRow> : null}{d.parking ? <InfoRow label="Aparcament">{d.parking}</InfoRow> : null}</div> : null}</section>
 
-      <section className="detail-section"><div className="detail-section-heading"><FileText size={19} /><h2>Documents</h2></div>{d.documents.length ? <div className="document-list">{d.documents.map((doc) => <div className="document-item" key={doc.id}><span className="document-icon"><FileText size={17} /></span><div><strong>{doc.name || 'Document sense nom'}</strong><small>{doc.direction === 'enviar' ? 'Per enviar' : 'Per rebre'} · {doc.status === 'pendent' ? 'Pendent' : doc.status === 'no_cal' ? 'No cal' : doc.direction === 'enviar' ? 'Enviat' : 'Rebut'}</small></div>{safeLink(doc.url) ? <a href={safeLink(doc.url)!} target="_blank" rel="noreferrer" aria-label={`Obrir ${doc.name}`}><ExternalLink size={16} /></a> : null}</div>)}</div> : <p className="section-empty">Encara no hi ha documents registrats.</p>}</section>
+      <section className="detail-section"><div className="detail-section-heading"><FileText size={19} /><h2>Documents</h2></div>{d.documents.length ? <div className="document-list">{d.documents.map((doc) => <div className="document-item" key={doc.id}><span className="document-icon"><FileText size={17} /></span><div><strong>{doc.name || 'Document sense nom'}</strong><small>{doc.direction === 'enviar' ? 'Per enviar' : 'Per rebre'} · {doc.status === 'pendent' ? 'Pendent' : doc.status === 'no_cal' ? 'No cal' : doc.direction === 'enviar' ? 'Enviat' : 'Rebut'}</small>{doc.storagePath ? <div className="document-file"><Paperclip size={13} />{documentLinks[doc.id] ? <a href={documentLinks[doc.id]} target="_blank" rel="noreferrer">{doc.fileName || 'Obrir fitxer adjunt'}</a> : documentLinks[doc.id] === '' ? <span>No s'ha pogut obrir el fitxer.</span> : <span>{doc.fileName || 'Fitxer adjunt'} · preparant enllaç…</span>}{cloudConfigured ? <button type="button" disabled={busyDocument !== null} onClick={() => void removeFile(doc.id)}>Treure</button> : null}</div> : null}{cloudConfigured ? <label className="document-upload">{busyDocument === doc.id ? 'Pujant fitxer…' : doc.storagePath ? 'Substituir fitxer' : 'Adjuntar fitxer'}<input type="file" disabled={busyDocument !== null} onChange={(e) => { const file = e.target.files?.[0]; void upload(doc.id, file); e.target.value = '' }} /></label> : null}</div>{safeLink(doc.url) ? <a href={safeLink(doc.url)!} target="_blank" rel="noreferrer" aria-label={`Obrir enllaç de ${doc.name}`}><ExternalLink size={16} /></a> : null}</div>)}</div> : <p className="section-empty">Encara no hi ha documents registrats. Afegeix-los editant la fitxa.</p>}{documentError ? <p className="form-error" role="alert">{documentError}</p> : null}</section>
 
       <section className="detail-section"><div className="detail-section-heading"><PackageCheck size={19} /><h2>Material a portar</h2><span className="section-counter">{d.materials.filter((item) => item.loaded).length}/{d.materials.length} carregat</span></div>{d.materials.length ? <div className="material-list">{d.materials.map((item) => <label className={`material-item ${item.loaded ? 'is-loaded' : ''}`} key={item.id}><input type="checkbox" checked={item.loaded} disabled={busyMaterial} onChange={() => void toggleMaterial(item.id)} /><span className="check-visual"><Check size={14} /></span>{item.name || 'Material sense nom'}</label>)}</div> : <p className="section-empty">Afegeix material a la fitxa per preparar la càrrega.</p>}{materialError ? <p className="form-error" role="alert">{materialError}</p> : null}</section>
 
@@ -166,18 +193,37 @@ export default function App() {
   function startForm(initial: Concert) { setFormInitial(initial); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
   async function save(item: Concert) {
     const saved = await saveConcert(item)
+    const previous = concerts.find((existing) => existing.id === saved.id)
+    const retained = new Set(saved.details.documents.map((doc) => doc.storagePath))
+    for (const doc of previous?.details.documents ?? []) {
+      if (doc.storagePath && !retained.has(doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
+    }
     setConcerts((prev) => [...prev.filter((existing) => existing.id !== saved.id), saved])
     open(saved.id)
   }
   async function remove() {
     if (!selected || !window.confirm(`Vols eliminar «${selected.title}»? Aquesta acció no es pot desfer.`)) return
-    try { await deleteConcert(selected.id); setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
+    try { await deleteConcert(selected.id); for (const doc of selected.details.documents) { if (doc.storagePath) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
   }
   async function toggleMaterial(id: string) {
     if (!selected) return
     const changed: Concert = { ...selected, details: { ...selected.details, materials: selected.details.materials.map((item) => item.id === id ? { ...item, loaded: !item.loaded } : item) } }
     const saved = await saveConcert(changed)
     setConcerts((prev) => prev.map((item) => item.id === saved.id ? saved : item))
+  }
+  async function uploadDocument(id: string, file: File) {
+    if (!selected) return
+    const saved = await uploadConcertDocument(selected, id, file)
+    setConcerts((prev) => prev.map((item) => item.id === saved.id ? saved : item))
+  }
+  async function removeDocumentFile(id: string) {
+    if (!selected) return
+    const doc = selected.details.documents.find((item) => item.id === id)
+    if (!doc?.storagePath) return
+    const changed: Concert = { ...selected, details: { ...selected.details, documents: selected.details.documents.map((item) => item.id === id ? { ...item, storagePath: undefined, fileName: undefined } : item) } }
+    const saved = await saveConcert(changed)
+    setConcerts((prev) => prev.map((item) => item.id === saved.id ? saved : item))
+    void removeConcertDocumentFile(doc.storagePath).catch(() => {})
   }
 
   return <div className="app-layout">
@@ -192,7 +238,7 @@ export default function App() {
         {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
         {loading ? <div className="content-loading">Carregant concerts…</div> : null}
         {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate('list')} /> : null}
-        {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} /> : null}
+        {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
           <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>
           <div className="overview-strip"><div className="overview-next"><div className="overview-icon"><Music2 size={22} /></div><div><span className="eyebrow">PROPER CONCERT</span><strong>{next ? next.title : 'Encara no hi ha cap data'}</strong><small>{next ? `${formatDate(next.date)} · ${next.city || next.venue || 'Lloc per concretar'}` : 'Afegeix un concert per començar'}</small></div>{next ? <button aria-label={`Obrir ${next.title}`} onClick={() => open(next.id)} className="overview-arrow"><ArrowRight size={19} /></button> : null}</div><div className="overview-stat"><span className="eyebrow">PER RESOLDRE</span><strong>{totalPending.toString().padStart(2, '0')}</strong><small>{totalPending === 1 ? 'qüestió pendent' : 'qüestions pendents'}</small></div></div>

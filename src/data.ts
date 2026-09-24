@@ -5,6 +5,8 @@ const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const cloudConfigured = Boolean(url && key)
 export const supabase = cloudConfigured ? createClient(url, key) : null
+const documentBucket = 'concert-documents'
+const maxDocumentBytes = 20 * 1024 * 1024
 
 const demoKey = 'escena-demo-concerts-v1'
 
@@ -137,4 +139,48 @@ export async function deleteConcert(id: string): Promise<void> {
   }
   const { error } = await supabase.from('concerts').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function uploadConcertDocument(concert: Concert, documentId: string, file: File): Promise<Concert> {
+  if (!supabase) throw new Error('La pujada de fitxers només està disponible amb Supabase.')
+  if (file.size > maxDocumentBytes) throw new Error('El fitxer no pot superar els 20 MB.')
+  const document = concert.details.documents.find((item) => item.id === documentId)
+  if (!document) throw new Error('Aquest document ja no existeix.')
+  if (!concert.updatedAt) throw new Error('Desa el concert abans de pujar-hi un fitxer.')
+  const { data: membership, error: membershipError } = await supabase.from('band_members').select('band_id').single()
+  if (membershipError || !membership) throw membershipError ?? new Error('No s’ha trobat l’espai de la banda.')
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-90) || 'document'
+  const path = `${membership.band_id}/${concert.id}/${documentId}/${crypto.randomUUID()}-${safeName}`
+  const { error: uploadError } = await supabase.storage.from(documentBucket).upload(path, file, { upsert: false })
+  if (uploadError) throw uploadError
+  const updated: Concert = {
+    ...concert,
+    details: {
+      ...concert.details,
+      documents: concert.details.documents.map((item) => item.id === documentId
+        ? { ...item, storagePath: path, fileName: file.name }
+        : item),
+    },
+  }
+  try {
+    const saved = await saveConcert(updated)
+    if (document.storagePath) void removeConcertDocumentFile(document.storagePath).catch(() => {})
+    return saved
+  } catch (error) {
+    await removeConcertDocumentFile(path).catch(() => {})
+    throw error
+  }
+}
+
+export async function removeConcertDocumentFile(path: string): Promise<void> {
+  if (!supabase) return
+  const { error } = await supabase.storage.from(documentBucket).remove([path])
+  if (error) throw error
+}
+
+export async function signedDocumentUrl(path: string): Promise<string> {
+  if (!supabase) throw new Error('Aquest fitxer no està disponible en mode demostració.')
+  const { data, error } = await supabase.storage.from(documentBucket).createSignedUrl(path, 60 * 60)
+  if (error) throw error
+  return data.signedUrl
 }

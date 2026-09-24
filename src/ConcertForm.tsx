@@ -104,12 +104,13 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
           </section>
 
           <section className="form-card">
-            <div className="section-heading"><span className="section-index">06</span><div><h2>Documents</h2><p>Registra què s'ha d'enviar o rebre. Pots afegir un enllaç.</p></div></div>
+            <div className="section-heading"><span className="section-index">06</span><div><h2>Documents</h2><p>Registra què s'ha d'enviar o rebre. Després de desar, podràs adjuntar-hi un fitxer.</p></div></div>
             <div className="repeat-list">
               {d.documents.map((doc) => <div className="repeat-entry" key={doc.id}>
                 <div className="repeat-row"><input aria-label="Nom del document" value={doc.name} onChange={(e) => setDetail('documents', d.documents.map((x) => x.id === doc.id ? { ...x, name: e.target.value } : x))} placeholder="Rider, full de ruta..." /><button type="button" className="icon-button danger-icon" aria-label="Eliminar document" onClick={() => setDetail('documents', d.documents.filter((x) => x.id !== doc.id))}><Trash2 size={17} /></button></div>
                 <div className="two-col"><label className="field">Acció <select value={doc.direction} onChange={(e) => setDetail('documents', d.documents.map((x) => x.id === doc.id ? { ...x, direction: e.target.value as typeof doc.direction } : x))}><option value="enviar">Enviar</option><option value="rebre">Rebre</option></select></label><label className="field">Situació <select value={doc.status} onChange={(e) => setDetail('documents', d.documents.map((x) => x.id === doc.id ? { ...x, status: e.target.value as typeof doc.status } : x))}><option value="pendent">Pendent</option><option value="fet">{doc.direction === 'enviar' ? 'Enviat' : 'Rebut'}</option><option value="no_cal">No cal</option></select></label></div>
                 <label className="field">Enllaç al document <input type="url" value={doc.url} onChange={(e) => setDetail('documents', d.documents.map((x) => x.id === doc.id ? { ...x, url: e.target.value } : x))} placeholder="https://..." /></label>
+                {doc.fileName ? <span className="attached-file-name">Fitxer adjunt: {doc.fileName}</span> : null}
               </div>)}
               <button type="button" className="add-button" onClick={() => setDetail('documents', [...d.documents, { id: createId(), name: '', direction: 'rebre', status: 'pendent', url: '' }])}><Plus size={16} /> Afegir document</button>
             </div>
