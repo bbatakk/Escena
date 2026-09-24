@@ -26,6 +26,9 @@ Sense variables d'entorn funciona en **mode demostració**: tres concerts d'exem
 La informació econòmica encara és un resum per concert, no un llibre de moviments.
 
 7. Per activar **Tresoreria**, executa `supabase/migrations/202609240005_money_movements.sql`. Els moviments poden ser ingressos o despeses, generals o vinculats a un concert. No substitueixen encara els imports resum de la fitxa.
+8. Per activar **Marxandatge**, executa `supabase/migrations/202609240006_merch.sql`. Crea productes amb preu i estoc, i registra les vendes vinculades a un concert. El control inicial evita vendre més unitats de les disponibles; encara no és un sistema de variants ni de tancament de caixa.
+
+9. La PWA es genera automàticament amb Vite: després del desplegament es pot instal·lar al mòbil. Amb una sessió autenticada, l'app guarda l'última llista de concerts i permet marcar material sense connexió; en tornar la xarxa, prova de sincronitzar els canvis. Els llistats de tresoreria, documents i marxandatge encara necessiten connexió per consultar dades noves.
 
 ## Provar des del mòbil, fora de localhost
 

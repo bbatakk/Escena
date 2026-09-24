@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { type BandDocument, type Concert, type MoneyMovement, emptyDetails } from './model'
+import { type BandDocument, type Concert, type MerchProduct, type MerchSale, type MoneyMovement, emptyDetails } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -17,6 +17,10 @@ function storageErrorMessage(error: { message?: string; statusCode?: string | nu
 const demoKey = 'escena-demo-concerts-v1'
 const libraryKey = 'escena-demo-library-v1'
 const moneyKey = 'escena-demo-money-v1'
+const merchProductsKey = 'escena-demo-merch-products-v1'
+const merchSalesKey = 'escena-demo-merch-sales-v1'
+const offlineConcertsKey = 'escena-offline-concerts-v1'
+const offlineQueueKey = 'escena-offline-queue-v1'
 
 function dateFromNow(days: number): string {
   const date = new Date()
@@ -103,9 +107,17 @@ function localConcerts(): Concert[] {
 
 export async function listConcerts(): Promise<Concert[]> {
   if (!supabase) return localConcerts()
-  const { data, error } = await supabase.from('concerts').select('*').order('date', { ascending: true })
-  if (error) throw error
-  return (data as ConcertRow[]).map(fromRow)
+  try {
+    const { data, error } = await supabase.from('concerts').select('*').order('date', { ascending: true })
+    if (error) throw error
+    const concerts = (data as ConcertRow[]).map(fromRow)
+    localStorage.setItem(offlineConcertsKey, JSON.stringify(concerts))
+    return concerts
+  } catch (error) {
+    const cached = localStorage.getItem(offlineConcertsKey)
+    if (cached) return JSON.parse(cached) as Concert[]
+    throw error
+  }
 }
 
 export async function saveConcert(concert: Concert): Promise<Concert> {
@@ -113,6 +125,15 @@ export async function saveConcert(concert: Concert): Promise<Concert> {
     const next = localConcerts().filter((item) => item.id !== concert.id)
     const saved = { ...concert, updatedAt: new Date().toISOString() }
     localStorage.setItem(demoKey, JSON.stringify([...next, saved]))
+    return saved
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const queued = JSON.parse(localStorage.getItem(offlineQueueKey) || '[]') as Concert[]
+    localStorage.setItem(offlineQueueKey, JSON.stringify([...queued.filter((item) => item.id !== concert.id), concert]))
+    const cached = JSON.parse(localStorage.getItem(offlineConcertsKey) || '[]') as Concert[]
+    const saved = { ...concert, updatedAt: concert.updatedAt || new Date().toISOString() }
+    localStorage.setItem(offlineConcertsKey, JSON.stringify([...cached.filter((item) => item.id !== concert.id), saved]))
     return saved
   }
 
@@ -138,6 +159,20 @@ export async function saveConcert(concert: Concert): Promise<Concert> {
   if (error) throw error
   if (!data) throw new Error('Aquest concert ha canviat en un altre dispositiu. Torna a la llista i obre’l de nou abans de desar.')
   return fromRow(data as ConcertRow)
+}
+
+export async function syncOfflineConcerts(): Promise<number> {
+  if (!supabase || (typeof navigator !== 'undefined' && !navigator.onLine)) return 0
+  const queued = JSON.parse(localStorage.getItem(offlineQueueKey) || '[]') as Concert[]
+  if (!queued.length) return 0
+  let synced = 0
+  const remaining: Concert[] = []
+  for (const concert of queued) {
+    try { await saveConcert(concert); synced += 1 }
+    catch { remaining.push(concert) }
+  }
+  localStorage.setItem(offlineQueueKey, JSON.stringify(remaining))
+  return synced
 }
 
 export async function deleteConcert(id: string): Promise<void> {
@@ -288,5 +323,44 @@ export async function deleteMoneyMovement(id: string): Promise<void> {
     return
   }
   const { error } = await supabase.from('money_movements').delete().eq('id', id)
+  if (error) throw error
+}
+
+interface MerchProductRow { id: string; name: string; price: number; stock: number; active: boolean }
+interface MerchSaleRow { id: string; concert_id: string; product_id: string; quantity: number; unit_price: number; note: string }
+function fromMerchProduct(row: MerchProductRow): MerchProduct { return { id: row.id, name: row.name, price: Number(row.price), stock: Number(row.stock), active: row.active } }
+function fromMerchSale(row: MerchSaleRow): MerchSale { return { id: row.id, concertId: row.concert_id, productId: row.product_id, quantity: Number(row.quantity), unitPrice: Number(row.unit_price), note: row.note } }
+
+export async function listMerchProducts(): Promise<MerchProduct[]> {
+  if (!supabase) { try { return JSON.parse(localStorage.getItem(merchProductsKey) || '[]') as MerchProduct[] } catch { return [] } }
+  const { data, error } = await supabase.from('merch_products').select('*').order('name')
+  if (error) throw error
+  return (data as MerchProductRow[]).map(fromMerchProduct)
+}
+
+export async function saveMerchProduct(product: MerchProduct): Promise<MerchProduct> {
+  if (!supabase) { const all = await listMerchProducts(); localStorage.setItem(merchProductsKey, JSON.stringify([...all.filter((item) => item.id !== product.id), product])); return product }
+  const { data, error } = await supabase.from('merch_products').upsert({ id: product.id, band_id: await bandId(), name: product.name.trim(), price: product.price, stock: product.stock, active: product.active }).select('*').single()
+  if (error) throw error
+  return fromMerchProduct(data as MerchProductRow)
+}
+
+export async function listMerchSales(): Promise<MerchSale[]> {
+  if (!supabase) { try { return JSON.parse(localStorage.getItem(merchSalesKey) || '[]') as MerchSale[] } catch { return [] } }
+  const { data, error } = await supabase.from('merch_sales').select('*').order('created_at', { ascending: false })
+  if (error) throw error
+  return (data as MerchSaleRow[]).map(fromMerchSale)
+}
+
+export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
+  if (!supabase) { const all = await listMerchSales(); localStorage.setItem(merchSalesKey, JSON.stringify([sale, ...all.filter((item) => item.id !== sale.id)])); return sale }
+  const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim() }).select('*').single()
+  if (error) throw error
+  return fromMerchSale(data as MerchSaleRow)
+}
+
+export async function deleteMerchSale(id: string): Promise<void> {
+  if (!supabase) { const all = await listMerchSales(); localStorage.setItem(merchSalesKey, JSON.stringify(all.filter((item) => item.id !== id))); return }
+  const { error } = await supabase.from('merch_sales').delete().eq('id', id)
   if (error) throw error
 }

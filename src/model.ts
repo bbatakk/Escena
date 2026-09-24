@@ -41,6 +41,23 @@ export interface MoneyMovement {
   note: string
 }
 
+export interface MerchProduct {
+  id: string
+  name: string
+  price: number
+  stock: number
+  active: boolean
+}
+
+export interface MerchSale {
+  id: string
+  concertId: string
+  productId: string
+  quantity: number
+  unitPrice: number
+  note: string
+}
+
 export interface MaterialItem {
   id: string
   name: string

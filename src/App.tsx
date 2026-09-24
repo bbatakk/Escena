@@ -3,16 +3,17 @@ import type { Session } from '@supabase/supabase-js'
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
   CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu, MoreHorizontal,
-  Music2, Navigation, PackageCheck, Paperclip, Pencil, Plus, Search, Ticket, Trash2,
+  Music2, Navigation, PackageCheck, Paperclip, Pencil, Plus, Search, ShoppingBag, Ticket, Trash2,
   UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
-import { cloudConfigured, deleteConcert, isConcertOwnedFile, listConcerts, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, uploadConcertDocument } from './data'
+import { cloudConfigured, deleteConcert, isConcertOwnedFile, listConcerts, removeConcertDocumentFile, saveConcert, signedDocumentUrl, supabase, syncOfflineConcerts, uploadConcertDocument } from './data'
 import { type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels } from './model'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
 const Treasury = lazy(() => import('./Treasury'))
-type Screen = 'list' | 'calendar' | 'detail' | 'form' | 'library' | 'treasury'
+const Merch = lazy(() => import('./Merch'))
+type Screen = 'list' | 'calendar' | 'detail' | 'form' | 'library' | 'treasury' | 'merch'
 
 function safeLink(value: string): string | null {
   try {
@@ -156,6 +157,7 @@ export default function App() {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [search, setSearch] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
 
   useEffect(() => {
     if (!supabase) return
@@ -176,6 +178,15 @@ export default function App() {
     listConcerts().then((data) => { if (alive) { setConcerts(data); setError('') } }).catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els concerts.') }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [authReady, session?.user.id])
+
+  useEffect(() => {
+    const becameOnline = () => { setOnline(true); void syncOfflineConcerts().then(() => { if (cloudConfigured && session) void listConcerts().then(setConcerts).catch(() => {}) }) }
+    const becameOffline = () => setOnline(false)
+    window.addEventListener('online', becameOnline)
+    window.addEventListener('offline', becameOffline)
+    if (online) void syncOfflineConcerts()
+    return () => { window.removeEventListener('online', becameOnline); window.removeEventListener('offline', becameOffline) }
+  }, [online, session])
 
   if (!authReady) return <div className="loading-page">Carregant Escena…</div>
   if (cloudConfigured && !session) return <AuthScreen />
@@ -230,17 +241,18 @@ export default function App() {
 
   return <div className="app-layout">
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">EL TEU ESPAI</div><div className="workspace-name"><div className="workspace-avatar">B</div><span>La nostra banda</span><MoreHorizontal size={16} /></div>
-      <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'list' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button><button className={screen === 'treasury' ? 'nav-active' : ''} onClick={() => navigate('treasury')}><Wallet size={19} /> Tresoreria</button></nav>
+      <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'list' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button><button className={screen === 'treasury' ? 'nav-active' : ''} onClick={() => navigate('treasury')}><Wallet size={19} /> Tresoreria</button><button className={screen === 'merch' ? 'nav-active' : ''} onClick={() => navigate('merch')}><ShoppingBag size={19} /> Marxandatge</button></nav>
       <div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><CircleHelp size={18} /></span><strong>Tot sota control</strong><p>Una fitxa per concert. Cap detall perdut pel camí.</p></div><div className="sidebar-account"><div className="account-avatar">{session?.user.email?.[0].toUpperCase() || 'D'}</div><div><strong>{session ? 'Compte compartit' : 'Mode demostració'}</strong><span>{session?.user.email || 'Dades només en aquest navegador'}</span></div>{session && supabase ? <button type="button" className="logout-button" onClick={() => void supabase?.auth.signOut()}>Sortir</button> : null}</div></div>
     </aside>
     {menuOpen ? <button className="mobile-overlay" aria-label="Tancar menú" onClick={() => setMenuOpen(false)} /> : null}
-    <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'calendar' ? 'Calendari' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : screen === 'treasury' ? 'Tresoreria' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? 'EN LÍNIA' : 'DEMO LOCAL'} <span className="online-dot" /></span></header>
+    <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'calendar' ? 'Calendari' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : screen === 'treasury' ? 'Tresoreria' : screen === 'merch' ? 'Marxandatge' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? (online ? 'EN LÍNIA' : 'SENSE CONNEXIÓ') : 'DEMO LOCAL'} <span className={`online-dot ${online ? '' : 'offline-dot'}`} /></span></header>
       <div className="content-area">
         {error ? <div className="global-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Tancar avís"><X size={16} /></button></div> : null}
         {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
         {loading ? <div className="content-loading">Carregant concerts…</div> : null}
         {screen === 'library' ? <Suspense fallback={<div className="content-loading">Carregant documents…</div>}><BandLibrary /></Suspense> : null}
         {screen === 'treasury' ? <Suspense fallback={<div className="content-loading">Carregant tresoreria…</div>}><Treasury concerts={concerts} /></Suspense> : null}
+        {screen === 'merch' ? <Suspense fallback={<div className="content-loading">Carregant marxandatge…</div>}><Merch concerts={concerts} /></Suspense> : null}
         {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate('list')} /> : null}
         {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
