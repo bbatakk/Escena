@@ -64,6 +64,7 @@ export interface MaterialItem {
   name: string
   loaded: boolean
   catalogId?: string
+  category?: string
 }
 
 export type PersonKind = 'musica' | 'tecnic' | 'manager' | 'contacte'
