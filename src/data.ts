@@ -456,6 +456,7 @@ export async function deleteMerchSale(id: string): Promise<void> {
   if (offline()) { writeCache(merchSalesKey, readCache<MerchSale>(merchSalesKey).filter((item) => item.id !== id)); queueData('sale', 'delete', id); return }
   const { error } = await supabase.from('merch_sales').delete().eq('id', id)
   if (error) throw error
+  writeCache(merchSalesKey, readCache<MerchSale>(merchSalesKey).filter((item) => item.id !== id))
 }
 
 type Resource = BandPerson | BandMaterial | SetlistTemplate
