@@ -7,7 +7,7 @@ import {
   Settings as SettingsIcon, UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
-import { cloudConfigured, deleteConcert, deleteMerchSale, getBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
+import { cloudConfigured, deleteConcert, deleteMerchSale, getBandProfile, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
 import { createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type MerchProduct, type MerchSale } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 
@@ -193,6 +193,7 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
 }
 
 export default function App() {
+  const [initialWorkspaceProfile] = useState(() => getCachedBandProfile())
   const [theme, setTheme] = useState<ThemeId>(() => {
     const stored = localStorage.getItem('escena-theme')
     return stored === 'classic' || stored === 'live-stage' || stored === 'club' || stored === 'paper' ? stored : 'live-stage'
@@ -203,8 +204,9 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [screen, setScreen] = useState<Screen>('home')
-  const [workspaceName, setWorkspaceName] = useState('La nostra banda')
-  const [workspaceLogo, setWorkspaceLogo] = useState<string | undefined>()
+  const [workspaceName, setWorkspaceName] = useState(initialWorkspaceProfile.name)
+  const [workspaceLogo, setWorkspaceLogo] = useState<string | undefined>(initialWorkspaceProfile.logoUrl)
+  const [workspaceProfileLoading, setWorkspaceProfileLoading] = useState(() => cloudConfigured && (!initialWorkspaceProfile.name || !initialWorkspaceProfile.logoUrl))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [formInitial, setFormInitial] = useState<Concert | null>(null)
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
@@ -217,7 +219,8 @@ export default function App() {
   useEffect(() => {
     if (!authReady || (cloudConfigured && !session)) return
     let active = true
-    getBandProfile().then((profile) => { if (active) { setWorkspaceName(profile.name); setWorkspaceLogo(profile.logoUrl) } }).catch(() => {})
+    setWorkspaceProfileLoading(true)
+    getBandProfile().then((profile) => { if (active) { setWorkspaceName(profile.name); setWorkspaceLogo(profile.logoUrl) } }).catch(() => {}).finally(() => { if (active) setWorkspaceProfileLoading(false) })
     return () => { active = false }
   }, [authReady, session?.user.id, online])
 
@@ -302,7 +305,7 @@ export default function App() {
   }
 
   return <div className={`app-layout ${themeClass(theme)}`}>
-    <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">BANDA O ARTISTA</div><button type="button" className="workspace-name" aria-label={`Configurar l’espai ${workspaceName}`} onClick={() => navigate('settings')}><div className="workspace-avatar">{workspaceLogo ? <img src={workspaceLogo} alt="" /> : workspaceName.trim().charAt(0).toUpperCase() || 'B'}</div><span>{workspaceName}</span><SettingsIcon size={16} /></button>
+    <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">BANDA O ARTISTA</div><button type="button" className={`workspace-name ${workspaceProfileLoading ? 'workspace-name-loading' : ''}`} aria-label={workspaceName ? `Configurar l’espai ${workspaceName}` : 'Configurar l’espai de la banda'} onClick={() => navigate('settings')}><div className="workspace-avatar">{workspaceLogo ? <img src={workspaceLogo} alt="" /> : workspaceProfileLoading ? <Music2 size={18} /> : workspaceName.trim().charAt(0).toUpperCase() || 'B'}</div><span>{workspaceName || (workspaceProfileLoading ? 'Carregant banda…' : 'Configura la banda')}</span><SettingsIcon size={16} /></button>
        <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'home' ? 'nav-active' : ''} onClick={() => navigate('home')}><House size={19} /> Inici</button><button className={screen === 'list' || screen === 'detail' || screen === 'form' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button><button className={screen === 'treasury' ? 'nav-active' : ''} onClick={() => navigate('treasury')}><Wallet size={19} /> Tresoreria</button><button className={screen === 'merch' ? 'nav-active' : ''} onClick={() => navigate('merch')}><ShoppingBag size={19} /> Marxandatge</button><div className="nav-divider" /><button className={screen === 'people' ? 'nav-active' : ''} onClick={() => navigate('people')}><UsersRound size={19} /> Persones</button><button className={screen === 'materials' ? 'nav-active' : ''} onClick={() => navigate('materials')}><PackageCheck size={19} /> Material</button><button className={screen === 'setlists' ? 'nav-active' : ''} onClick={() => navigate('setlists')}><ListMusic size={19} /> Setlists</button><div className="nav-divider" /><button className={screen === 'settings' ? 'nav-active' : ''} onClick={() => navigate('settings')}><SettingsIcon size={19} /> Configuració</button></nav>
       <div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><CircleHelp size={18} /></span><strong>Tot sota control</strong><p>Una fitxa per concert. Cap detall perdut pel camí.</p></div><div className="sidebar-account"><div className="account-avatar">{session?.user.email?.[0].toUpperCase() || 'D'}</div><div><strong>{session ? 'Compte compartit' : 'Mode demostració'}</strong><span>{session?.user.email || 'Dades només en aquest navegador'}</span></div>{session && supabase ? <button type="button" className="logout-button" onClick={() => void supabase?.auth.signOut()}>Sortir</button> : null}</div></div>
     </aside>

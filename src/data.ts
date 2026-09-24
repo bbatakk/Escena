@@ -27,6 +27,7 @@ const materialsKey = 'escena-demo-materials-v1'
 const setlistsKey = 'escena-demo-setlists-v1'
 const bandNameKey = 'escena-demo-band-name-v1'
 const bandLogoKey = 'escena-demo-band-logo-v1'
+const bandLogoUrlCacheKey = 'escena-band-logo-url-v1'
 const defaultBandName = 'La nostra banda'
 
 export const backupVersion = 1
@@ -76,15 +77,25 @@ export async function getBandName(): Promise<string> {
 
 export interface BandProfile { name: string; logoUrl?: string }
 
+export function getCachedBandProfile(): BandProfile {
+  try {
+    const name = localStorage.getItem(bandNameKey) || (supabase ? '' : defaultBandName)
+    if (!supabase) return { name: name || defaultBandName, logoUrl: localStorage.getItem(bandLogoKey) || undefined }
+    const cached = JSON.parse(localStorage.getItem(bandLogoUrlCacheKey) || 'null') as { url?: string; expiresAt?: number } | null
+    return { name, logoUrl: cached?.expiresAt && cached.expiresAt > Date.now() + 30_000 ? cached.url : undefined }
+  } catch { return { name: supabase ? '' : defaultBandName } }
+}
+
 export async function getBandProfile(): Promise<BandProfile> {
   const name = await getBandName()
   if (!supabase) return { name, logoUrl: localStorage.getItem(bandLogoKey) || undefined }
-  if (offline()) return { name }
+  if (offline()) return { name, logoUrl: getCachedBandProfile().logoUrl }
   const { data, error } = await supabase.from('bands').select('logo_path').eq('id', await bandId()).single()
   if (error) return { name }
   if (!data.logo_path) return { name }
   const { data: signed, error: signedError } = await supabase.storage.from('band-assets').createSignedUrl(data.logo_path, 60 * 60)
   if (signedError) return { name }
+  localStorage.setItem(bandLogoUrlCacheKey, JSON.stringify({ url: signed.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 }))
   return { name, logoUrl: signed.signedUrl }
 }
 
@@ -110,6 +121,7 @@ export async function saveBandLogo(file: File): Promise<string> {
   if (current.logo_path) void supabase.storage.from('band-assets').remove([current.logo_path])
   const { data: signed, error: signedError } = await supabase.storage.from('band-assets').createSignedUrl(path, 60 * 60)
   if (signedError) throw signedError
+  localStorage.setItem(bandLogoUrlCacheKey, JSON.stringify({ url: signed.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 }))
   return signed.signedUrl
 }
 
@@ -121,6 +133,7 @@ export async function removeBandLogo(): Promise<void> {
   if (error) throw error
   const { error: updateError } = await supabase.from('bands').update({ logo_path: null }).eq('id', id)
   if (updateError) throw updateError
+  localStorage.removeItem(bandLogoUrlCacheKey)
   if (data.logo_path) { const { error: removeError } = await supabase.storage.from('band-assets').remove([data.logo_path]); if (removeError) throw removeError }
 }
 
