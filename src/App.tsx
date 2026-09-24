@@ -1,0 +1,205 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import {
+  ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
+  CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu, MoreHorizontal,
+  Music2, Navigation, PackageCheck, Pencil, Plus, Search, Ticket, Trash2,
+  UsersRound, Wallet, X,
+} from 'lucide-react'
+import ConcertForm from './ConcertForm'
+import { cloudConfigured, deleteConcert, listConcerts, saveConcert, supabase } from './data'
+import { type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels } from './model'
+
+type Screen = 'list' | 'calendar' | 'detail' | 'form'
+
+function safeLink(value: string): string | null {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : null
+  } catch { return null }
+}
+
+function AuthScreen() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [working, setWorking] = useState(false)
+  const [message, setMessage] = useState('')
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase) return
+    setWorking(true)
+    setMessage('')
+    const result = creating
+      ? await supabase.auth.signUp({ email, password })
+      : await supabase.auth.signInWithPassword({ email, password })
+    setWorking(false)
+    if (result.error) setMessage(result.error.message)
+    else if (creating && !result.data.session) setMessage('Comprova el correu per confirmar el compte i després entra.')
+  }
+
+  return <div className="auth-page"><div className="auth-brand"><div className="brand-mark"><Music2 size={22} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span></div>
+    <div className="auth-panel"><span className="eyebrow">EL TEU ESPAI DE CONCERTS</span><h1>Tot el concert,<br /><em>al mateix lloc.</em></h1><p>Les dades, els horaris i el que queda pendent. Sense perdre el fil.</p>
+      <form onSubmit={submit} className="auth-form"><label className="field">Correu electrònic <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label><label className="field">Contrasenya <input type="password" required minLength={6} autoComplete={creating ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} /></label>{message ? <p role="alert" className="auth-message">{message}</p> : null}<button type="submit" className="button button-primary" disabled={working}>{working ? 'Un moment…' : creating ? 'Crear espai' : 'Entrar'} <ArrowRight size={17} /></button></form>
+      <button className="text-button auth-switch" type="button" onClick={() => { setCreating(!creating); setMessage('') }}>{creating ? 'Ja tens un compte? Entra' : 'Primera vegada? Crea un espai'}</button>
+    </div><p className="auth-foot">Pensat per a bandes que no volen deixar cap detall enrere.</p></div>
+}
+
+function ConcertCard({ concert, onOpen }: { concert: Concert; onOpen: () => void }) {
+  const pending = getPending(concert)
+  const [year, month, day] = concert.date.split('-')
+  const monthLabel = concert.date ? new Intl.DateTimeFormat('ca-ES', { month: 'short' }).format(new Date(Number(year), Number(month) - 1, Number(day))).replace('.', '') : ''
+  return <button type="button" className="concert-card" onClick={onOpen}>
+    <div className="date-stamp"><strong>{day || '–'}</strong><span>{monthLabel}</span></div>
+    <div className="concert-card-info"><div className="card-topline"><span className={`status status-${concert.status}`}>{statusLabels[concert.status]}</span>{pending.length ? <span className="pending-count"><span className="small-dot" />{pending.length} {pending.length === 1 ? 'pendent' : 'pendents'}</span> : null}</div><h3>{concert.title}</h3><p><MapPin size={14} /> {[concert.venue, concert.city].filter(Boolean).join(' · ') || 'Ubicació per concretar'}</p></div><ArrowRight size={19} className="card-arrow" />
+  </button>
+}
+
+function CalendarView({ concerts, onOpen, month, setMonth }: { concerts: Concert[]; onOpen: (id: string) => void; month: Date; setMonth: (date: Date) => void }) {
+  const year = month.getFullYear()
+  const monthIndex = month.getMonth()
+  const days = new Date(year, monthIndex + 1, 0).getDate()
+  const offset = (new Date(year, monthIndex, 1).getDay() + 6) % 7
+  const cells = Array.from({ length: Math.ceil((offset + days) / 7) * 7 }, (_, index) => index - offset + 1)
+  const today = new Date()
+  const monthName = new Intl.DateTimeFormat('ca-ES', { month: 'long', year: 'numeric' }).format(month)
+  const monthlyConcerts = concerts.filter((item) => {
+    const [eventYear, eventMonth] = item.date.split('-').map(Number)
+    return eventYear === year && eventMonth === monthIndex + 1
+  }).sort((a, b) => a.date.localeCompare(b.date))
+  return <div className="calendar-panel"><div className="calendar-head"><h2>{monthName}</h2><div className="calendar-controls"><button type="button" className="icon-button" aria-label="Mes anterior" onClick={() => setMonth(new Date(year, monthIndex - 1, 1))}><ChevronLeft size={20} /></button><button type="button" className="today-button" onClick={() => setMonth(new Date(today.getFullYear(), today.getMonth(), 1))}>Avui</button><button type="button" className="icon-button" aria-label="Mes següent" onClick={() => setMonth(new Date(year, monthIndex + 1, 1))}><ChevronRight size={20} /></button></div></div>
+    <div className="calendar-grid">{['Dl', 'Dt', 'Dc', 'Dj', 'Dv', 'Ds', 'Dg'].map((day) => <div className="weekday" key={day}>{day}</div>)}
+      {cells.map((day, index) => { const date = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; const events = concerts.filter((item) => item.date === date); const isToday = day === today.getDate() && year === today.getFullYear() && monthIndex === today.getMonth(); return <div className={`calendar-day ${day < 1 || day > days ? 'calendar-day-outside' : ''}`} key={index}>{day >= 1 && day <= days ? <><span className={`calendar-number ${isToday ? 'calendar-today' : ''}`}>{day}</span>{events.map((item) => <button type="button" key={item.id} className="calendar-event" onClick={() => onOpen(item.id)} title={item.title}>{item.title}</button>)}</> : null}</div> })}
+    </div><div className="calendar-agenda"><span className="eyebrow">CONCERTS DEL MES</span>{monthlyConcerts.length ? monthlyConcerts.map((item) => <button key={item.id} type="button" onClick={() => onOpen(item.id)}><span>{formatDate(item.date, { day: 'numeric', month: 'short' })}</span><strong>{item.title}</strong><ArrowRight size={16} /></button>) : <p>Encara no hi ha concerts aquest mes.</p>}</div></div>
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="info-row"><span>{label}</span><strong>{children || '—'}</strong></div>
+}
+
+function Detail({ concert, onBack, onEdit, onDelete, onToggle }: { concert: Concert; onBack: () => void; onEdit: () => void; onDelete: () => void; onToggle: (id: string) => Promise<void> }) {
+  const [busyMaterial, setBusyMaterial] = useState(false)
+  const [materialError, setMaterialError] = useState('')
+  const d = concert.details
+  const pending = getPending(concert)
+  const sortedSchedule = [...d.schedule].filter((x) => x.time || x.label).sort((a, b) => a.time.localeCompare(b.time))
+  async function toggleMaterial(id: string) {
+    setBusyMaterial(true)
+    setMaterialError('')
+    try { await onToggle(id) } catch (cause) { setMaterialError(cause instanceof Error ? cause.message : 'No s’ha pogut desar el canvi.') } finally { setBusyMaterial(false) }
+  }
+
+  return <div className="detail-shell">
+    <button className="text-button back-button" onClick={onBack}><ArrowLeft size={17} /> Tornar als concerts</button>
+    <div className="detail-hero"><div className="detail-hero-main"><span className="eyebrow">FITXA DE CONCERT <span className="eyebrow-separator">/</span> {statusLabels[concert.status].toUpperCase()}</span><h1>{concert.title}</h1><div className="hero-meta"><span><CalendarDays size={17} />{formatDate(concert.date)}</span><span><MapPin size={17} />{[concert.venue, concert.city].filter(Boolean).join(' · ') || 'Ubicació per concretar'}</span></div></div><div className="hero-action"><button className="button button-light" onClick={onEdit}><Pencil size={16} /> Editar fitxa</button></div></div>
+    <div className="detail-body"><div className="detail-main">
+      <section className="pending-panel"><div className="panel-title"><div className="panel-title-icon"><CircleHelp size={19} /></div><div><span className="eyebrow">SEGUIMENT</span><h2>Coses pendents <span className="count-pill">{pending.length}</span></h2></div></div>{pending.length ? <ul className="pending-list">{pending.map((item, index) => <li key={`${item}-${index}`}><span className="pending-marker" />{item}</li>)}</ul> : <p className="empty-pending"><Check size={18} /> No hi ha res pendent segons les dades d'aquesta fitxa.</p>}</section>
+
+      <section className="detail-section"><div className="detail-section-heading"><Wallet size={19} /><h2>Acord</h2></div><div className="info-rows"><InfoRow label="Catxet acordat">{formatMoney(concert.feeAmount)}</InfoRow><InfoRow label="Catxet cobrat">{formatMoney(concert.feePaid)}</InfoRow>{d.conditions ? <InfoRow label="Condicions">{d.conditions}</InfoRow> : null}{d.cancellation ? <InfoRow label="Cancel·lació">{d.cancellation}</InfoRow> : null}</div></section>
+
+      <section className="detail-section"><div className="detail-section-heading"><Clock3 size={19} /><h2>Horaris i logística</h2></div>{sortedSchedule.length ? <div className="timeline">{sortedSchedule.map((item) => <div className="timeline-item" key={item.id}><span className="timeline-time">{item.time || '—'}</span><span className="timeline-line" /><div><strong>{item.label || 'Sense nom'}</strong>{item.place ? <p>{item.place}</p> : null}</div></div>)}</div> : <p className="section-empty">Encara no hi ha horaris afegits.</p>}{d.travel || d.loadIn || d.parking ? <div className="info-rows subsection-rows">{d.travel ? <InfoRow label="Desplaçament">{d.travel}</InfoRow> : null}{d.loadIn ? <InfoRow label="Accés de càrrega">{d.loadIn}</InfoRow> : null}{d.parking ? <InfoRow label="Aparcament">{d.parking}</InfoRow> : null}</div> : null}</section>
+
+      <section className="detail-section"><div className="detail-section-heading"><FileText size={19} /><h2>Documents</h2></div>{d.documents.length ? <div className="document-list">{d.documents.map((doc) => <div className="document-item" key={doc.id}><span className="document-icon"><FileText size={17} /></span><div><strong>{doc.name || 'Document sense nom'}</strong><small>{doc.direction === 'enviar' ? 'Per enviar' : 'Per rebre'} · {doc.status === 'pendent' ? 'Pendent' : doc.status === 'no_cal' ? 'No cal' : doc.direction === 'enviar' ? 'Enviat' : 'Rebut'}</small></div>{safeLink(doc.url) ? <a href={safeLink(doc.url)!} target="_blank" rel="noreferrer" aria-label={`Obrir ${doc.name}`}><ExternalLink size={16} /></a> : null}</div>)}</div> : <p className="section-empty">Encara no hi ha documents registrats.</p>}</section>
+
+      <section className="detail-section"><div className="detail-section-heading"><PackageCheck size={19} /><h2>Material a portar</h2><span className="section-counter">{d.materials.filter((item) => item.loaded).length}/{d.materials.length} carregat</span></div>{d.materials.length ? <div className="material-list">{d.materials.map((item) => <label className={`material-item ${item.loaded ? 'is-loaded' : ''}`} key={item.id}><input type="checkbox" checked={item.loaded} disabled={busyMaterial} onChange={() => void toggleMaterial(item.id)} /><span className="check-visual"><Check size={14} /></span>{item.name || 'Material sense nom'}</label>)}</div> : <p className="section-empty">Afegeix material a la fitxa per preparar la càrrega.</p>}{materialError ? <p className="form-error" role="alert">{materialError}</p> : null}</section>
+
+      <section className="detail-section"><div className="detail-section-heading"><Music2 size={19} /><h2>Actuació</h2></div>{d.setlist ? <div className="setlist">{d.setlist.split('\n').filter(Boolean).map((song, index) => <div key={index}><span>{String(index + 1).padStart(2, '0')}</span>{song}</div>)}</div> : <p className="section-empty">Encara no hi ha setlist.</p>}{d.passes ? <div className="info-rows subsection-rows"><InfoRow label="Invitacions i passis">{d.passes}</InfoRow></div> : null}</section>
+    </div><aside className="detail-aside">
+      <section className="aside-card"><div className="aside-heading"><Navigation size={18} /><h3>Ubicació</h3></div><strong>{concert.venue || 'Lloc per concretar'}</strong><p>{[concert.address, concert.city].filter(Boolean).join(' · ') || 'Encara no hi ha adreça'}</p>{concert.address ? <a className="inline-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(concert.address)}`} target="_blank" rel="noreferrer">Obrir el mapa <ExternalLink size={14} /></a> : null}</section>
+      <section className="aside-card"><div className="aside-heading"><UsersRound size={18} /><h3>Persones</h3></div>{d.contactName ? <><span className="aside-label">CONTACTE RESPONSABLE</span><strong>{d.contactName}</strong>{d.contactPhone ? <a href={`tel:${d.contactPhone}`} className="aside-contact">{d.contactPhone}</a> : null}{d.contactEmail ? <a href={`mailto:${d.contactEmail}`} className="aside-contact">{d.contactEmail}</a> : null}</> : <p>Encara no hi ha contacte.</p>}{d.team ? <><span className="aside-label team-label">BANDA I EQUIP</span><p>{d.team}</p></> : null}</section>
+      <section className="aside-card"><div className="aside-heading"><Ticket size={18} /><h3>Hospitalitat</h3></div><InfoRow label="Sopar">{d.dinner === 'si' ? d.dinnerDetails || 'Sí · detalls pendents' : d.dinner === 'no' ? 'No' : 'Encara no se sap'}</InfoRow><InfoRow label="Allotjament">{d.lodging === 'si' ? d.lodgingDetails || 'Sí · detalls pendents' : d.lodging === 'no' ? 'No cal' : 'Encara no se sap'}</InfoRow></section>
+      <section className="aside-card"><div className="aside-heading"><Wallet size={18} /><h3>Tancament</h3></div><InfoRow label="Marxandatge">{formatMoney(d.merchSales)}</InfoRow><InfoRow label="Despeses">{formatMoney(d.expenses)}</InfoRow>{d.notes ? <p className="closing-notes">{d.notes}</p> : null}</section>
+      <button type="button" className="delete-link" onClick={onDelete}><Trash2 size={15} /> Eliminar concert</button>
+    </aside></div>
+  </div>
+}
+
+export default function App() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [authReady, setAuthReady] = useState(!cloudConfigured)
+  const [concerts, setConcerts] = useState<Concert[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [screen, setScreen] = useState<Screen>('list')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [formInitial, setFormInitial] = useState<Concert | null>(null)
+  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const [search, setSearch] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true) })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => setSession(current))
+    return () => listener.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!authReady || (cloudConfigured && !session)) {
+      setLoading(false)
+      if (authReady && cloudConfigured) { setConcerts([]); setSelectedId(null); setScreen('list') }
+      return
+    }
+    let alive = true
+    setLoading(true)
+    if (cloudConfigured) setConcerts([])
+    listConcerts().then((data) => { if (alive) { setConcerts(data); setError('') } }).catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els concerts.') }).finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [authReady, session?.user.id])
+
+  if (!authReady) return <div className="loading-page">Carregant Escena…</div>
+  if (cloudConfigured && !session) return <AuthScreen />
+
+  const selected = concerts.find((item) => item.id === selectedId)
+  const sorted = [...concerts].sort((a, b) => a.date.localeCompare(b.date))
+  const visible = sorted.filter((item) => `${item.title} ${item.venue} ${item.city}`.toLocaleLowerCase('ca').includes(search.toLocaleLowerCase('ca')))
+  const today = new Date()
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const upcoming = visible.filter((item) => item.date >= todayString && item.status !== 'cancel·lat')
+  const other = visible.filter((item) => item.date < todayString || item.status === 'cancel·lat')
+  const next = sorted.find((item) => item.date >= todayString && item.status !== 'cancel·lat')
+  const totalPending = concerts.reduce((sum, item) => sum + getPending(item).length, 0)
+
+  function open(id: string) { setSelectedId(id); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
+  function navigate(to: Screen) { setScreen(to); setSelectedId(null); setMenuOpen(false); window.scrollTo(0, 0) }
+  function startForm(initial: Concert) { setFormInitial(initial); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
+  async function save(item: Concert) {
+    const saved = await saveConcert(item)
+    setConcerts((prev) => [...prev.filter((existing) => existing.id !== saved.id), saved])
+    open(saved.id)
+  }
+  async function remove() {
+    if (!selected || !window.confirm(`Vols eliminar «${selected.title}»? Aquesta acció no es pot desfer.`)) return
+    try { await deleteConcert(selected.id); setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
+  }
+  async function toggleMaterial(id: string) {
+    if (!selected) return
+    const changed: Concert = { ...selected, details: { ...selected.details, materials: selected.details.materials.map((item) => item.id === id ? { ...item, loaded: !item.loaded } : item) } }
+    const saved = await saveConcert(changed)
+    setConcerts((prev) => prev.map((item) => item.id === saved.id ? saved : item))
+  }
+
+  return <div className="app-layout">
+    <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">EL TEU ESPAI</div><div className="workspace-name"><div className="workspace-avatar">B</div><span>La nostra banda</span><MoreHorizontal size={16} /></div>
+      <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'list' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button></nav>
+      <div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><CircleHelp size={18} /></span><strong>Tot sota control</strong><p>Una fitxa per concert. Cap detall perdut pel camí.</p></div><div className="sidebar-account"><div className="account-avatar">{session?.user.email?.[0].toUpperCase() || 'D'}</div><div><strong>{session ? 'Compte compartit' : 'Mode demostració'}</strong><span>{session?.user.email || 'Dades només en aquest navegador'}</span></div>{session && supabase ? <button type="button" className="logout-button" onClick={() => void supabase?.auth.signOut()}>Sortir</button> : null}</div></div>
+    </aside>
+    {menuOpen ? <button className="mobile-overlay" aria-label="Tancar menú" onClick={() => setMenuOpen(false)} /> : null}
+    <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'calendar' ? 'Calendari' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? 'EN LÍNIA' : 'DEMO LOCAL'} <span className="online-dot" /></span></header>
+      <div className="content-area">
+        {error ? <div className="global-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Tancar avís"><X size={16} /></button></div> : null}
+        {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
+        {loading ? <div className="content-loading">Carregant concerts…</div> : null}
+        {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate('list')} /> : null}
+        {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} /> : null}
+        {!loading && (screen === 'list' || screen === 'calendar') ? <>
+          <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>
+          <div className="overview-strip"><div className="overview-next"><div className="overview-icon"><Music2 size={22} /></div><div><span className="eyebrow">PROPER CONCERT</span><strong>{next ? next.title : 'Encara no hi ha cap data'}</strong><small>{next ? `${formatDate(next.date)} · ${next.city || next.venue || 'Lloc per concretar'}` : 'Afegeix un concert per començar'}</small></div>{next ? <button aria-label={`Obrir ${next.title}`} onClick={() => open(next.id)} className="overview-arrow"><ArrowRight size={19} /></button> : null}</div><div className="overview-stat"><span className="eyebrow">PER RESOLDRE</span><strong>{totalPending.toString().padStart(2, '0')}</strong><small>{totalPending === 1 ? 'qüestió pendent' : 'qüestions pendents'}</small></div></div>
+          <div className="listing-header"><div className="view-tabs"><button className={screen === 'list' ? 'active-tab' : ''} onClick={() => setScreen('list')}><List size={17} /> Llista</button><button className={screen === 'calendar' ? 'active-tab' : ''} onClick={() => setScreen('calendar')}><CalendarDays size={17} /> Calendari</button></div>{screen === 'list' ? <label className="search-box"><Search size={18} /><span className="sr-only">Cerca concerts</span><input type="search" placeholder="Cerca concerts..." value={search} onChange={(e) => setSearch(e.target.value)} /></label> : null}</div>
+          {screen === 'calendar' ? <CalendarView concerts={concerts} onOpen={open} month={month} setMonth={setMonth} /> : <div className="concert-list"><div className="list-label"><span>PROPERS CONCERTS</span><span>{upcoming.length} {upcoming.length === 1 ? 'concert' : 'concerts'}</span></div>{upcoming.length ? upcoming.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />) : <div className="empty-list"><CalendarDays size={25} /><h3>{search ? 'Cap resultat' : 'Encara no hi ha concerts propers'}</h3><p>{search ? 'Prova una altra cerca.' : 'Crea un concert i comença a reunir tota la informació.'}</p></div>}{other.length ? <><div className="list-label past-label"><span>ANTERIORS I CANCEL·LATS</span><span>{other.length}</span></div>{other.map((item) => <ConcertCard key={item.id} concert={item} onOpen={() => open(item.id)} />)}</> : null}</div>}
+        </> : null}
+      </div><footer className="app-footer"><span>Escena · Els concerts, clars.</span><span>Fet per al camí <ArrowRight size={14} /></span></footer>
+    </main>
+  </div>
+}

@@ -1,0 +1,44 @@
+# Escena
+
+Web responsive per reunir la informació de cada concert i veure què queda pendent sense mantenir un checklist general. Interfície en català.
+
+## Arrencar
+
+Requisits: Node.js 20+ i npm.
+
+```bash
+npm install
+npm run dev
+```
+
+Sense variables d'entorn funciona en **mode demostració**: tres concerts d'exemple i canvis desats només al `localStorage` d'aquell navegador. No són dades compartides entre mòbils o ordinadors.
+
+## Dades compartides (Supabase)
+
+1. Crea un projecte a [Supabase](https://supabase.com/). Abans de crear cap usuari, executa `supabase/migrations/202609240001_initial.sql` a l'SQL Editor. El trigger crea una banda per cada compte nou i les polítiques RLS separen els concerts de cada banda.
+2. A **Project Settings → API**, copia la URL del projecte i la clau **anon/publishable**. Crea `.env.local` a partir de `.env.example` i assigna `VITE_SUPABASE_URL` i `VITE_SUPABASE_ANON_KEY`. Mai facis servir la clau `service_role` al navegador.
+3. Reinicia el servidor. Des de la pantalla d'accés crea el compte compartit de la banda. Si Supabase demana verificar el correu, confirma'l abans d'entrar. Fes servir aquest compte als dispositius de prova.
+
+La primera versió registra documents com a estat i **enllaç HTTPS**; encara no puja arxius a Supabase Storage. La informació econòmica és un resum per concert, no un llibre de moviments.
+
+## Provar des del mòbil, fora de localhost
+
+1. Puja aquest projecte a un repositori Git (sense `.env.local`).
+2. Importa'l a [Vercel](https://vercel.com/) com a projecte Vite. Build: `npm run build`; directori de sortida: `dist`.
+3. A **Environment Variables** de Vercel posa les dues variables `VITE_SUPABASE_*` anteriors i torna a desplegar. Són identificadors públics: la seguretat de les dades depèn de l'autenticació i les polítiques RLS de la migració.
+4. Obre la URL HTTPS del desplegament des de qualsevol mòbil i entra amb el compte compartit. Per a la confirmació per correu o futures recuperacions de contrasenya, afegeix la URL de Vercel a **Authentication → URL Configuration** de Supabase.
+
+Sense comptes/configuració a Supabase i Vercel, el projecte no es pot publicar amb dades compartides només amb el codi font. Durant desenvolupament, `npm run dev` exposa el servidor a la xarxa local (`--host`) i permet provar-lo des d'un mòbil a la mateixa Wi-Fi amb la IP de l'ordinador.
+
+## Verificació
+
+```bash
+npm run test
+npm run build
+```
+
+## Context breu
+
+- `docs/product.md`: objectiu, abast actual i fases posteriors.
+- `docs/domain.md`: model de concert i regles dels pendents.
+- `AGENTS.md`: guia curta per a eines de desenvolupament amb IA.
