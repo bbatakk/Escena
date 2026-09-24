@@ -6,7 +6,7 @@
 
 Estats del concert: **en converses → reservat → confirmat → realitzat**, amb **cancel·lat** com a sortida possible. L'usuari tria l'estat; «realitzat» no implica «cobrat».
 
-Sopar/allotjament: **pendent de saber / sí / no**. Un «sí» sense detalls és informació incompleta; un «no» no és un pendent. Documents: direcció **enviar/rebre** i estat **pendent/fet/no cal**. L'enllaç, quan existeix, és a un fitxer allotjat en un servei extern; «fet» és una confirmació de la banda, no una comprovació automàtica de lliurament.
+Sopar/allotjament: **pendent de saber / sí / no**. Un «sí» al sopar compta com a confirmat sense exigir detalls. L’allotjament «sí» necessita adreça per considerar-se concretat; un «no» no és un pendent. Documents: direcció **enviar/rebre** i estat **pendent/fet/no cal**. L'enllaç, quan existeix, és a un fitxer allotjat en un servei extern; «fet» és una confirmació de la banda, no una comprovació automàtica de lliurament.
 
 Un document també pot tenir `storagePath` i `fileName`: el fitxer és al bucket privat `concert-documents` sota `band_id/concert_id/document_id/`. Una URL temporal signada permet obrir-lo només després d'autenticar-se. Pujar un fitxer no equival a enviar-lo o rebre'l; els pendents segueixen derivant-se de l'estat del document. La pujada només es fa després de desar la fitxa.
 
@@ -16,7 +16,7 @@ Horaris: entrades lliures amb hora, nom i lloc; no hi ha una seqüència fixa. M
 
 ## Pendents derivats
 
-`getPending(concert)` és l'única font de veritat d'aquesta primera versió. Mostra: reserva sense confirmar; concert confirmat sense sala ni adreça; sopar/allotjament indicats com a «sí» sense detalls; documents amb nom i estat pendent; concert realitzat amb catxet cobrat inferior al pactat. Un concert cancel·lat no mostra pendents. Cap altre camp buit genera un avís per defecte. Els pendents desapareixen en actualitzar les dades, sense caselles manuals.
+`getPending(concert)` és l'única font de veritat d'aquesta primera versió. Mostra: reserva sense confirmar; concert confirmat sense sala ni adreça; allotjament indicat com a «sí» sense adreça; documents amb nom i estat pendent; concert realitzat amb catxet cobrat inferior al pactat. Un sopar confirmat sense detalls no genera cap pendent. Un concert cancel·lat no mostra pendents. Cap altre camp buit genera un avís per defecte. Els pendents desapareixen en actualitzar les dades, sense caselles manuals.
 
 ## Persistència actual
 
@@ -24,7 +24,7 @@ En Supabase, columnes per dades identificatives i econòmiques bàsiques; `detai
 
 `updated_at` protegeix l'edició simultània: si una fitxa ha canviat en un altre dispositiu, es rebutja desar una còpia antiga en comptes de sobreescriure-la silenciosament.
 
-Les vendes de marxandatge redueixen l'estoc disponible calculant `stock - vendes`. La pantalla ho valida i la base de dades també té un trigger per evitar sobrepassar l'estoc en vendes simultànies.
+Les vendes de marxandatge redueixen l'estoc disponible. Els productes sense variants calculen `stock - vendes`; els productes amb talles comproven tant l'estoc de cada talla com el total. La base de dades també aplica un trigger per evitar sobrepassar l'estoc en vendes simultànies.
 
 Les vendes de marxandatge s'inclouen automàticament als ingressos totals i al balanç de Tresoreria, però continuen sent registres separats dels moviments manuals. No s'han de tornar a introduir manualment, perquè es duplicarien.
 

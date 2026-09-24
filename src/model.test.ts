@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getPending, newConcert } from './model'
+import { getPending, merchRevenueByConcert, newConcert, totalMerchRevenue } from './model'
 
 describe('pendents derivats de la fitxa', () => {
   it('no converteix dades opcionals desconegudes en tasques', () => {
@@ -52,5 +52,35 @@ describe('pendents derivats de la fitxa', () => {
     expect(getPending(concert)).toEqual(['Concretar l’allotjament'])
     concert.details.lodgingAddress = 'Hotel Central, Carrer Major 1'
     expect(getPending(concert)).toEqual([])
+  })
+})
+
+describe('ingressos de marxandatge per concert', () => {
+  it('fa servir el resum antic només quan el concert encara no té vendes detallades', () => {
+    const withDetail = newConcert()
+    withDetail.id = 'concert-detail'
+    withDetail.details.merchSales = 100
+    const legacy = newConcert()
+    legacy.id = 'concert-legacy'
+    legacy.details.merchSales = 42
+    const sales = [{ id: 'sale-1', concertId: withDetail.id, productId: 'shirt', quantity: 2, unitPrice: 15, note: '' }]
+    const revenues = merchRevenueByConcert([withDetail, legacy], sales)
+    expect(revenues.get(withDetail.id)).toBe(30)
+    expect(revenues.get(legacy.id)).toBe(42)
+    expect(totalMerchRevenue([withDetail, legacy], sales)).toBe(72)
+  })
+})
+
+describe('ingressos de marxandatge per concert', () => {
+  it('manté els resums antics només si el concert no té vendes detallades', () => {
+    const concertWithSales = newConcert()
+    concertWithSales.id = 'with-sales'
+    concertWithSales.details.merchSales = 100
+    const concertWithLegacy = newConcert()
+    concertWithLegacy.id = 'legacy'
+    concertWithLegacy.details.merchSales = 42
+    const sales = [{ id: 's1', concertId: 'with-sales', productId: 'p1', quantity: 2, unitPrice: 15, note: '' }]
+    expect(merchRevenueByConcert([concertWithSales, concertWithLegacy], sales)).toEqual(new Map([['with-sales', 30], ['legacy', 42]]))
+    expect(totalMerchRevenue([concertWithSales, concertWithLegacy], sales)).toBe(72)
   })
 })

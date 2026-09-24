@@ -38,12 +38,15 @@ function AuthScreen() {
     if (!supabase) return
     setWorking(true)
     setMessage('')
-    const result = creating
-      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
-      : await supabase.auth.signInWithPassword({ email, password })
-    setWorking(false)
-    if (result.error) setMessage(result.error.message)
-    else if (creating && !result.data.session) setMessage('Comprova el correu per confirmar el compte i després entra.')
+    try {
+      const result = creating
+        ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
+        : await supabase.auth.signInWithPassword({ email, password })
+      if (result.error) setMessage(result.error.message)
+      else if (creating && !result.data.session) setMessage('Comprova el correu per confirmar el compte i després entra.')
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'No s’ha pogut connectar. Comprova la connexió i torna-ho a provar.')
+    } finally { setWorking(false) }
   }
 
   return <div className="auth-page"><div className="auth-brand"><div className="brand-mark"><Music2 size={22} strokeWidth={2.3} /></div><span>escena<span className="brand-dot">.</span></span></div>
@@ -112,6 +115,7 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
   const concertSales = merchSales.filter((item) => item.concertId === concert.id)
   const pending = getPending(concert)
   const sortedSchedule = [...d.schedule].filter((x) => x.time || x.label).sort((a, b) => a.time.localeCompare(b.time))
+  const concertMerchRevenue = concertSales.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
   const visibleMerchProducts = merchProducts.filter((product) => product.active && `${product.name} ${(product.sizes || []).map((size) => size.name).join(' ')}`.toLocaleLowerCase('ca').includes(merchSearch.toLocaleLowerCase('ca')))
   const soldForConcert = (productId: string, size?: string) => concertSales.filter((item) => item.productId === productId && (size ? item.size === size : !item.size)).reduce((sum, item) => sum + item.quantity, 0)
   const stockRemaining = (product: MerchProduct, size?: string) => { const stock = size ? product.sizes?.find((item) => item.name === size)?.stock || 0 : product.stock; const sold = merchSales.filter((item) => item.productId === product.id && (size ? item.size === size : !item.size)).reduce((sum, item) => sum + item.quantity, 0); return Math.max(stock - sold, 0) }
@@ -164,7 +168,7 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
       <section className="aside-card"><div className="aside-heading"><Navigation size={18} /><h3>Ubicació</h3></div><strong>{concert.venue || 'Lloc per concretar'}</strong>{concert.address ? <a className="address-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(concert.address)}`} target="_blank" rel="noreferrer">{concert.address} <ExternalLink size={14} /></a> : <p>Encara no hi ha adreça</p>}{concert.city ? <p>{concert.city}</p> : null}</section>
       <section className="aside-card"><div className="aside-heading"><UsersRound size={18} /><h3>Persones</h3></div>{d.contactName ? <><span className="aside-label">CONTACTE RESPONSABLE</span><strong>{d.contactName}</strong>{d.contactPhone ? <a href={`tel:${d.contactPhone}`} className="aside-contact">{d.contactPhone}</a> : null}{d.contactEmail ? <a href={`mailto:${d.contactEmail}`} className="aside-contact">{d.contactEmail}</a> : null}</> : null}{d.personIds.length ? <div className="selected-people">{d.personIds.map((id) => <span key={id}>{people.find((person) => person.id === id)?.name || 'Persona eliminada'}</span>)}</div> : null}{!d.contactName && !d.personIds.length ? <p>Encara no hi ha contacte.</p> : null}{d.team ? <><span className="aside-label team-label">NOTES D’EQUIP</span><p>{d.team}</p></> : null}</section>
       <section className="aside-card"><div className="aside-heading"><Ticket size={18} /><h3>Hospitalitat</h3></div><InfoRow label="Sopar">{d.dinner === 'si' ? 'Sí' : d.dinner === 'no' ? 'No' : 'Encara no se sap'}</InfoRow><InfoRow label="Allotjament">{d.lodging === 'si' ? d.lodgingDetails || 'Sí' : d.lodging === 'no' ? 'No cal' : 'Encara no se sap'}</InfoRow>{d.lodgingAddress ? <a className="inline-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.lodgingAddress)}`} target="_blank" rel="noreferrer">{d.lodgingAddress} <ExternalLink size={14} /></a> : null}</section>
-      <section className="aside-card"><div className="aside-heading"><Wallet size={18} /><h3>Tancament</h3></div><InfoRow label="Marxandatge">{formatMoney(d.merchSales)}</InfoRow><InfoRow label="Despeses">{formatMoney(d.expenses)}</InfoRow>{d.notes ? <p className="closing-notes">{d.notes}</p> : null}</section>
+       <section className="aside-card"><div className="aside-heading"><Wallet size={18} /><h3>Tancament</h3></div>{concertSales.length ? <InfoRow label="Marxandatge">{formatMoney(concertMerchRevenue)}</InfoRow> : d.merchSales > 0 ? <InfoRow label="Vendes antigues (resum)">{formatMoney(d.merchSales)}</InfoRow> : <InfoRow label="Marxandatge">{formatMoney(0)}</InfoRow>}<InfoRow label="Despeses">{formatMoney(d.expenses)}</InfoRow>{d.notes ? <p className="closing-notes">{d.notes}</p> : null}</section>
       <button type="button" className="delete-link" onClick={onDelete}><Trash2 size={15} /> Eliminar concert</button>
     </aside></div>
   </div>
@@ -192,7 +196,7 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true) })
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true) }).catch(() => { setSession(null); setAuthReady(true) })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => setSession(current))
     return () => listener.subscription.unsubscribe()
   }, [])

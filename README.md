@@ -23,16 +23,17 @@ Sense variables d'entorn funciona en **mode demostració**: tres concerts d'exem
 5. Per adjuntar fitxers, executa també `supabase/migrations/202609240002_concert_documents.sql` a l'SQL Editor. Crea un bucket **privat** amb polítiques per banda. Desa el concert i el document, obre la fitxa i utilitza **Adjuntar fitxer**. Màxim 20 MB per fitxer. L'app crea enllaços temporals per obrir-los; adjuntar no canvia l'estat d'«enviat»/«rebut». Els enllaços HTTPS externs continuen funcionant.
 6. Per utilitzar **Documents de la banda**, executa `supabase/migrations/202609240003_band_documents.sql` després de les dues anteriors. A la biblioteca pots desar riders, bios o enllaços i adjuntar fitxers privats. A la fitxa d'un concert, tria'n un per afegir-hi una còpia de la referència amb un estat propi. Arxivar-lo a la biblioteca no afecta els concerts que ja l'utilitzen; si substitueixes el fitxer compartit, els concerts anteriors mantenen l'original. Si ja havies executat la migració 003 abans d'aquesta correcció, executa també `supabase/migrations/202609240004_repair_shared_storage.sql`.
 
-La informació econòmica encara és un resum per concert, no un llibre de moviments.
+Tresoreria registra moviments manuals; les vendes de marxandatge de cada fitxa s’hi sumen automàticament als ingressos i al balanç.
 
 7. Per activar **Tresoreria**, executa `supabase/migrations/202609240005_money_movements.sql`. Els moviments poden ser ingressos o despeses, generals o vinculats a un concert. No substitueixen encara els imports resum de la fitxa.
-8. Per activar **Marxandatge**, executa `supabase/migrations/202609240006_merch.sql`. Crea productes amb preu i estoc, i registra les vendes vinculades a un concert. El control inicial evita vendre més unitats de les disponibles; encara no és un sistema de variants ni de tancament de caixa.
+8. Per activar **Marxandatge**, executa `supabase/migrations/202609240006_merch.sql`. Crea productes amb preu i estoc, i registra les vendes ràpidament des de la fitxa del concert. El control d’estoc també es valida a la base de dades.
 
-9. La PWA es genera automàticament amb Vite: després del desplegament es pot instal·lar al mòbil. Amb una sessió autenticada, l'app guarda l'última llista de concerts i permet marcar material sense connexió; en tornar la xarxa, prova de sincronitzar els canvis. Els llistats de tresoreria, documents i marxandatge encara necessiten connexió per consultar dades noves.
+9. La PWA es genera automàticament amb Vite: després del desplegament es pot instal·lar al mòbil. Amb una sessió autenticada, l'app guarda l'última llista de concerts i permet marcar material sense connexió; en tornar la xarxa, prova de sincronitzar els canvis. Tresoreria, documents i marxandatge poden mostrar les últimes dades guardades localment quan no hi ha connexió.
 10. La migració `supabase/migrations/202609240007_members_roles.sql` només prepara rols i invitacions. No cal executar-la per la prova amb compte compartit; executa-la quan vulguis començar la transició a comptes individuals.
 11. Per activar **Persones**, **Material** i **Setlists**, executa `supabase/migrations/202609240008_band_resources.sql`. Són catàlegs separats i apareixen com a selectors dins la fitxa de cada concert.
 12. Per poder eliminar documents de la biblioteca i els seus fitxers de Storage, executa `supabase/migrations/202609240009_band_documents_delete.sql`.
 13. Per afegir talles i estoc independent a cada talla de marxandatge, executa `supabase/migrations/202609240010_merch_sizes.sql`.
+14. Després de la migració 010, executa `supabase/migrations/202609240011_merch_stock_guard.sql` per conservar correctament les vendes històriques sense talla i impedir reduccions d’estoc per sota de les unitats venudes.
 
 ## Provar des del mòbil, fora de localhost
 

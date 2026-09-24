@@ -13,7 +13,7 @@ Una banda gestiona tota la informació d'un concert, des de l'acord fins al cobr
 
 ## Primer lliurable implementat
 
-Accés amb Supabase quan està configurat; demo local si no. Llista i calendari; crear, editar i eliminar concerts; fitxa amb acord, contactes, horaris, logística, hospitalitat, documents com a enllaços/estat i fitxers privats adjunts, apartats separats de persones, material i setlists reutilitzables, biblioteca de documents, tresoreria bàsica, marxandatge, material marcable, acreditacions i imports-resum; pendents derivats. RLS de banda a les migracions SQL.
+Accés amb Supabase quan està configurat; demo local si no. Llista i calendari; crear, editar i eliminar concerts; fitxa amb acord, contactes, horaris, logística, hospitalitat, documents com a enllaços/estat i fitxers privats adjunts, apartats separats de persones, material i setlists reutilitzables, biblioteca de documents, tresoreria bàsica, catàleg de marxandatge amb talles i estoc per variant, venda ràpida per concert, material marcable, acreditacions i imports-resum; pendents derivats. RLS de banda a les migracions SQL.
 
 ## Següents lliurables
 

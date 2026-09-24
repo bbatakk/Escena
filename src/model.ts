@@ -66,6 +66,19 @@ export interface MerchSale {
   size?: string
 }
 
+export function merchRevenueByConcert(concerts: Concert[], sales: MerchSale[]): Map<string, number> {
+  const revenue = new Map<string, number>()
+  for (const sale of sales) revenue.set(sale.concertId, (revenue.get(sale.concertId) || 0) + sale.quantity * sale.unitPrice)
+  for (const concert of concerts) {
+    if (concert.details.merchSales > 0 && !revenue.has(concert.id)) revenue.set(concert.id, concert.details.merchSales)
+  }
+  return revenue
+}
+
+export function totalMerchRevenue(concerts: Concert[], sales: MerchSale[]): number {
+  return Array.from(merchRevenueByConcert(concerts, sales).values()).reduce((sum, amount) => sum + amount, 0)
+}
+
 export interface MaterialItem {
   id: string
   name: string

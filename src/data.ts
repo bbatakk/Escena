@@ -42,15 +42,26 @@ export interface AppBackup {
 }
 
 export async function exportBackup(): Promise<AppBackup> {
-  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listResource<BandPerson>('band_people'), listResource<BandMaterial>('band_materials'), listResource<SetlistTemplate>('setlist_templates')])
+  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates')])
   return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, concerts, library, money, merchProducts, merchSales, people, materials, setlists }
 }
 
 export function validateBackup(value: unknown): value is AppBackup {
-  if (!value || typeof value !== 'object') return false
+  if (!isRecord(value)) return false
   const backup = value as Partial<AppBackup>
-  return backup.version === backupVersion && Array.isArray(backup.concerts) && Array.isArray(backup.library) && Array.isArray(backup.money) && Array.isArray(backup.merchProducts) && Array.isArray(backup.merchSales) && Array.isArray(backup.people) && Array.isArray(backup.materials) && Array.isArray(backup.setlists)
+  const hasId = (item: unknown) => isRecord(item) && typeof item.id === 'string' && item.id.length > 0
+  return backup.version === backupVersion
+    && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && isRecord(item.details) && Array.isArray(item.details.documents) && Array.isArray(item.details.materials))
+    && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string')
+    && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && typeof item.amount === 'number' && typeof item.date === 'string')
+    && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.price === 'number' && typeof item.stock === 'number' && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && typeof size.stock === 'number'))))
+    && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && typeof item.unitPrice === 'number')
+    && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string')
+    && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string')
+    && Array.isArray(backup.setlists) && backup.setlists.every((item) => hasId(item) && typeof item.name === 'string' && Array.isArray(item.songs) && item.songs.every((song) => typeof song === 'string'))
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
 
 export function importLocalBackup(backup: AppBackup): void {
   localStorage.setItem(demoKey, JSON.stringify(backup.concerts))
@@ -64,9 +75,49 @@ export function importLocalBackup(backup: AppBackup): void {
   if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
 }
 
+export async function importBackup(backup: AppBackup): Promise<void> {
+  if (!supabase) { importLocalBackup(backup); return }
+  if (offline()) throw new Error('Connecta’t a internet per importar el backup a l’espai compartit.')
+
+  // Cloud imports merge/overwrite matching IDs; they never delete records missing from the file.
+  const [currentConcerts, currentSales, currentBandId] = await Promise.all([listConcerts(), listMerchSales(), bandId()])
+  const concertVersions = new Map(currentConcerts.map((concert) => [concert.id, concert.updatedAt]))
+  const currentSaleIds = new Set(currentSales.map((sale) => sale.id))
+  const ownPath = (path?: string) => path?.startsWith(`${currentBandId}/`) ? path : undefined
+
+  for (const concert of backup.concerts) {
+    const safeConcert: Concert = {
+      ...concert,
+      updatedAt: concertVersions.get(concert.id),
+      details: {
+        ...concert.details,
+        documents: concert.details.documents.map((document) => {
+          const storagePath = ownPath(document.storagePath)
+          return { ...document, storagePath, fileName: storagePath ? document.fileName : undefined }
+        }),
+      },
+    }
+    await saveConcert(safeConcert)
+  }
+  await Promise.all(backup.library.map((document) => {
+    const storagePath = ownPath(document.storagePath)
+    return saveBandDocument({ ...document, storagePath, fileName: storagePath ? document.fileName : undefined })
+  }))
+  await Promise.all(backup.money.map(saveMoneyMovement))
+  await Promise.all(backup.merchProducts.map(saveMerchProduct))
+  await Promise.all(backup.people.map((item) => saveResource('band_people', item)))
+  await Promise.all(backup.materials.map((item) => saveResource('band_materials', item)))
+  await Promise.all(backup.setlists.map((item) => saveResource('setlist_templates', item)))
+  for (const sale of backup.merchSales) {
+    if (!currentSaleIds.has(sale.id)) await saveMerchSale(sale)
+  }
+  if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
+}
+
 function offline(): boolean { return typeof navigator !== 'undefined' && !navigator.onLine }
 function readCache<T>(key: string): T[] { try { return JSON.parse(localStorage.getItem(key) || '[]') as T[] } catch { return [] } }
 function writeCache<T>(key: string, value: T[]): void { localStorage.setItem(key, JSON.stringify(value)) }
+export function activeResources<T extends { active: boolean }>(items: T[]): T[] { return items.filter((item) => item.active) }
 function queueData(entity: 'money' | 'product' | 'sale', action: 'save' | 'delete', payload: unknown): void {
   const queue = readCache<{ id: string; entity: string; action: string; payload: unknown }>(offlineDataQueueKey)
   const id = typeof payload === 'string' ? payload : (payload as { id: string }).id
@@ -361,9 +412,9 @@ export async function deleteBandDocument(document: BandDocument): Promise<void> 
   const concerts = await listConcerts()
   const used = concerts.some((concert) => concert.details.documents.some((item) => item.libraryId === document.id || (document.storagePath && item.storagePath === document.storagePath)))
   if (used) throw new Error('No es pot eliminar: aquest document s’utilitza en una fitxa de concert.')
+  if (document.storagePath) await removeConcertDocumentFile(document.storagePath)
   const { error } = await supabase.from('band_documents').delete().eq('id', document.id)
   if (error) throw error
-  if (document.storagePath) await removeConcertDocumentFile(document.storagePath)
 }
 
 export async function uploadBandDocument(document: BandDocument, file: File): Promise<BandDocument> {
@@ -463,8 +514,12 @@ type Resource = BandPerson | BandMaterial | SetlistTemplate
 type ResourceTable = 'band_people' | 'band_materials' | 'setlist_templates'
 const resourceKeys: Record<ResourceTable, string> = { band_people: peopleKey, band_materials: materialsKey, setlist_templates: setlistsKey }
 export async function listResource<T extends Resource>(table: ResourceTable): Promise<T[]> {
+  return activeResources(await listAllResources<T>(table))
+}
+
+export async function listAllResources<T extends Resource>(table: ResourceTable): Promise<T[]> {
   if (!supabase || offline()) return readCache<T>(resourceKeys[table])
-  const { data, error } = await supabase.from(table).select('*').eq('active', true).order('name')
+  const { data, error } = await supabase.from(table).select('*').order('name')
   if (error) throw error
   const rows = data as T[]
   writeCache(resourceKeys[table], rows)
