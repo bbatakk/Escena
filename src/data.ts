@@ -323,9 +323,9 @@ export async function deleteBandDocument(document: BandDocument): Promise<void> 
   const concerts = await listConcerts()
   const used = concerts.some((concert) => concert.details.documents.some((item) => item.libraryId === document.id || (document.storagePath && item.storagePath === document.storagePath)))
   if (used) throw new Error('No es pot eliminar: aquest document s’utilitza en una fitxa de concert.')
-  if (document.storagePath) await removeConcertDocumentFile(document.storagePath)
   const { error } = await supabase.from('band_documents').delete().eq('id', document.id)
   if (error) throw error
+  if (document.storagePath) await removeConcertDocumentFile(document.storagePath)
 }
 
 export async function uploadBandDocument(document: BandDocument, file: File): Promise<BandDocument> {
