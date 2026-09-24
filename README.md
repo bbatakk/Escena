@@ -36,6 +36,7 @@ Tresoreria registra moviments manuals; les vendes de marxandatge de cada fitxa s
 14. Després de la migració 010, executa `supabase/migrations/202609240011_merch_stock_guard.sql` per conservar correctament les vendes històriques sense talla i impedir reduccions d’estoc per sota de les unitats venudes.
 15. Per canviar el nom de l’espai compartit, executa `supabase/migrations/202609240012_workspace_name.sql`.
 16. Per pujar un logotip o una imatge de la banda, executa `supabase/migrations/202609240013_band_logo.sql`. La imatge es desa en un bucket privat i només la poden consultar els membres de la banda.
+17. Per activar l’assistent d’IA, desplega `supabase/functions/concert-assistant` amb `supabase functions deploy concert-assistant` i desa la clau del proveïdor com a secret amb `supabase secrets set OPENAI_API_KEY=...`. Opcionalment configura `OPENAI_MODEL`; per defecte s’utilitza `gpt-4o-mini`. No posis mai aquesta clau a `.env.local` ni al client web.
 15. Per poder personalitzar el nom de l’espai de la banda, executa `supabase/migrations/202609240012_workspace_name.sql`.
 
 ## Provar des del mòbil, fora de localhost
