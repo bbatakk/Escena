@@ -48,6 +48,12 @@ export interface MerchProduct {
   price: number
   stock: number
   active: boolean
+  sizes?: MerchSizeVariant[]
+}
+
+export interface MerchSizeVariant {
+  name: string
+  stock: number
 }
 
 export interface MerchSale {
@@ -57,6 +63,7 @@ export interface MerchSale {
   quantity: number
   unitPrice: number
   note: string
+  size?: string
 }
 
 export interface MaterialItem {

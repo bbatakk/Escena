@@ -32,6 +32,7 @@ La informació econòmica encara és un resum per concert, no un llibre de movim
 10. La migració `supabase/migrations/202609240007_members_roles.sql` només prepara rols i invitacions. No cal executar-la per la prova amb compte compartit; executa-la quan vulguis començar la transició a comptes individuals.
 11. Per activar **Persones**, **Material** i **Setlists**, executa `supabase/migrations/202609240008_band_resources.sql`. Són catàlegs separats i apareixen com a selectors dins la fitxa de cada concert.
 12. Per poder eliminar documents de la biblioteca i els seus fitxers de Storage, executa `supabase/migrations/202609240009_band_documents_delete.sql`.
+13. Per afegir talles i estoc independent a cada talla de marxandatge, executa `supabase/migrations/202609240010_merch_sizes.sql`.
 
 ## Provar des del mòbil, fora de localhost
 

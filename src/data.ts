@@ -416,10 +416,10 @@ export async function deleteMoneyMovement(id: string): Promise<void> {
   writeCache(moneyKey, readCache<MoneyMovement>(moneyKey).filter((item) => item.id !== id))
 }
 
-interface MerchProductRow { id: string; name: string; price: number; stock: number; active: boolean }
-interface MerchSaleRow { id: string; concert_id: string; product_id: string; quantity: number; unit_price: number; note: string }
-function fromMerchProduct(row: MerchProductRow): MerchProduct { return { id: row.id, name: row.name, price: Number(row.price), stock: Number(row.stock), active: row.active } }
-function fromMerchSale(row: MerchSaleRow): MerchSale { return { id: row.id, concertId: row.concert_id, productId: row.product_id, quantity: Number(row.quantity), unitPrice: Number(row.unit_price), note: row.note } }
+interface MerchProductRow { id: string; name: string; price: number; stock: number; active: boolean; sizes?: MerchProduct['sizes'] | null }
+interface MerchSaleRow { id: string; concert_id: string; product_id: string; quantity: number; unit_price: number; note: string; size?: string | null }
+function fromMerchProduct(row: MerchProductRow): MerchProduct { return { id: row.id, name: row.name, price: Number(row.price), stock: Number(row.stock), active: row.active, sizes: row.sizes || [] } }
+function fromMerchSale(row: MerchSaleRow): MerchSale { return { id: row.id, concertId: row.concert_id, productId: row.product_id, quantity: Number(row.quantity), unitPrice: Number(row.unit_price), note: row.note, size: row.size || undefined } }
 
 export async function listMerchProducts(): Promise<MerchProduct[]> {
   if (!supabase || offline()) return readCache<MerchProduct>(merchProductsKey)
@@ -431,7 +431,7 @@ export async function listMerchProducts(): Promise<MerchProduct[]> {
 export async function saveMerchProduct(product: MerchProduct): Promise<MerchProduct> {
   if (!supabase) { const all = await listMerchProducts(); localStorage.setItem(merchProductsKey, JSON.stringify([...all.filter((item) => item.id !== product.id), product])); return product }
   if (offline()) { const all = readCache<MerchProduct>(merchProductsKey); writeCache(merchProductsKey, [...all.filter((item) => item.id !== product.id), product]); queueData('product', 'save', product); return product }
-  const { data, error } = await supabase.from('merch_products').upsert({ id: product.id, band_id: await bandId(), name: product.name.trim(), price: product.price, stock: product.stock, active: product.active }).select('*').single()
+  const { data, error } = await supabase.from('merch_products').upsert({ id: product.id, band_id: await bandId(), name: product.name.trim(), price: product.price, stock: product.stock, active: product.active, sizes: product.sizes || [] }).select('*').single()
   if (error) throw error
   const saved = fromMerchProduct(data as MerchProductRow); const all = readCache<MerchProduct>(merchProductsKey); writeCache(merchProductsKey, [...all.filter((item) => item.id !== saved.id), saved]); return saved
 }
@@ -446,7 +446,7 @@ export async function listMerchSales(): Promise<MerchSale[]> {
 export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
   if (!supabase) { const all = await listMerchSales(); localStorage.setItem(merchSalesKey, JSON.stringify([sale, ...all.filter((item) => item.id !== sale.id)])); return sale }
   if (offline()) { const all = readCache<MerchSale>(merchSalesKey); writeCache(merchSalesKey, [sale, ...all.filter((item) => item.id !== sale.id)]); queueData('sale', 'save', sale); return sale }
-  const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim() }).select('*').single()
+  const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim(), size: sale.size || null }).select('*').single()
   if (error) throw error
   const saved = fromMerchSale(data as MerchSaleRow); const all = readCache<MerchSale>(merchSalesKey); writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); return saved
 }
