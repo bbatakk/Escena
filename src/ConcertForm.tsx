@@ -134,7 +134,7 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
             </div>
           </section>
 
-          <section className="form-card">
+          <section className="form-card wide-card dynamic-card">
             <div className="section-heading"><span className="section-index">06</span><div><h2>Documents</h2><p>Registra què s'ha d'enviar o rebre. Després de desar, podràs adjuntar-hi un fitxer.</p></div></div>
             <div className="repeat-list">
               {library.length ? <div className="library-picker"><span>DOCUMENTS DE LA BANDA</span><div><select aria-label="Document de la banda" value={selectedLibraryId} onChange={(event) => setSelectedLibraryId(event.target.value)}><option value="">Tria un document…</option>{library.filter((item) => !d.documents.some((doc) => doc.libraryId === item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" className="button button-secondary" disabled={!selectedLibraryId} onClick={addFromLibrary}><Plus size={15} /> Afegir</button></div><small>S'afegirà com a pendent d'enviar. Pots canviar-ho després.</small></div> : null}
@@ -149,7 +149,7 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
             </div>
           </section>
 
-          <section className="form-card">
+          <section className="form-card wide-card dynamic-card">
             <div className="section-heading"><span className="section-index">07</span><div><h2>Material</h2><p>La llista que comprovareu abans de sortir.</p></div></div>
             <div className="repeat-list">
               {catalog.length ? <div className="library-picker"><span>MATERIAL DEL GRUP</span><div><select aria-label="Material del grup" defaultValue="" onChange={(event) => { addMaterial(event.target.value); event.target.value = '' }}><option value="">Afegeix material…</option>{Array.from(new Set(catalog.filter((item) => !d.materials.some((entry) => entry.catalogId === item.id)).map((item) => item.category || 'Sense categoria'))).map((category) => <optgroup key={category} label={category}>{catalog.filter((item) => (item.category || 'Sense categoria') === category && !d.materials.some((entry) => entry.catalogId === item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</optgroup>)}</select></div><div className="material-category-actions">{Array.from(new Set(catalog.filter((item) => !d.materials.some((entry) => entry.catalogId === item.id)).map((item) => item.category || 'Sense categoria'))).map((category) => <button type="button" className="add-button" key={category} onClick={() => addMaterialCategory(category)}><Plus size={15} /> Afegir tot: {category}</button>)}</div><small>Tria un element o afegeix tota una categoria. El material es copia en aquest concert.</small></div> : null}
@@ -158,12 +158,12 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
             </div>
           </section>
 
-          <section className="form-card">
+          <section className="form-card wide-card dynamic-card">
             <div className="section-heading"><span className="section-index">08</span><div><h2>Actuació i acreditacions</h2><p>Allò que cal tenir a mà el dia del concert.</p></div></div>
             <div className="fields">{setlists.length ? <div className="library-picker"><span>PLANTILLES DE SETLIST</span><div><select aria-label="Plantilla de setlist" value={d.setlistTemplateId || ''} onChange={(e) => applySetlist(e.target.value)}><option value="">Tria una plantilla…</option>{setlists.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.songs.length} cançons</option>)}</select></div><small>En triar-la, el repertori es copia aquí i després el pots ajustar per aquest concert.</small></div> : null}<label className="field">Setlist <textarea rows={5} value={d.setlist} onChange={(e) => setDetail('setlist', e.target.value)} placeholder="Una cançó per línia" /></label><label className="field">Invitacions i passis <textarea rows={2} value={d.passes} onChange={(e) => setDetail('passes', e.target.value)} /></label></div>
           </section>
 
-          <section className="form-card">
+          <section className="form-card wide-card dynamic-card">
             <div className="section-heading"><span className="section-index">09</span><div><h2>Tancament</h2><p>Imports de resum d'aquest concert.</p></div></div>
             <div className="fields two-col"><label className="field">Catxet cobrat (€) <input type="number" min="0" step="0.01" value={concert.feePaid} onChange={(e) => setField('feePaid', Number(e.target.value))} /></label><label className="field">Vendes de merxandatge (€) <input type="number" min="0" step="0.01" value={d.merchSales} onChange={(e) => setDetail('merchSales', Number(e.target.value))} /></label><label className="field">Despeses (€) <input type="number" min="0" step="0.01" value={d.expenses} onChange={(e) => setDetail('expenses', Number(e.target.value))} /></label><label className="field field-span">Notes i incidències <textarea rows={3} value={d.notes} onChange={(e) => setDetail('notes', e.target.value)} /></label></div>
           </section>
