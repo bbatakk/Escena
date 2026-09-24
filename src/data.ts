@@ -26,6 +26,7 @@ const peopleKey = 'escena-demo-people-v1'
 const materialsKey = 'escena-demo-materials-v1'
 const setlistsKey = 'escena-demo-setlists-v1'
 const bandNameKey = 'escena-demo-band-name-v1'
+const bandLogoKey = 'escena-demo-band-logo-v1'
 const defaultBandName = 'La nostra banda'
 
 export const backupVersion = 1
@@ -71,6 +72,56 @@ export async function getBandName(): Promise<string> {
   const name = data.name?.trim() || defaultBandName
   localStorage.setItem(bandNameKey, name)
   return name
+}
+
+export interface BandProfile { name: string; logoUrl?: string }
+
+export async function getBandProfile(): Promise<BandProfile> {
+  const name = await getBandName()
+  if (!supabase) return { name, logoUrl: localStorage.getItem(bandLogoKey) || undefined }
+  if (offline()) return { name }
+  const { data, error } = await supabase.from('bands').select('logo_path').eq('id', await bandId()).single()
+  if (error) return { name }
+  if (!data.logo_path) return { name }
+  const { data: signed, error: signedError } = await supabase.storage.from('band-assets').createSignedUrl(data.logo_path, 60 * 60)
+  if (signedError) return { name }
+  return { name, logoUrl: signed.signedUrl }
+}
+
+export function saveLocalBandLogo(dataUrl: string): string {
+  localStorage.setItem(bandLogoKey, dataUrl)
+  return dataUrl
+}
+
+export async function saveBandLogo(file: File): Promise<string> {
+  if (!supabase) throw new Error('Fes servir el mode local per desar la imatge en aquest navegador.')
+  if (offline()) throw new Error('Connecta’t a internet per canviar la imatge de l’espai compartit.')
+  if (!file.type.startsWith('image/')) throw new Error('Tria un fitxer d’imatge.')
+  if (file.size > 5 * 1024 * 1024) throw new Error('La imatge no pot superar els 5 MB.')
+  const id = await bandId()
+  const { data: current, error: currentError } = await supabase.from('bands').select('logo_path').eq('id', id).single()
+  if (currentError) throw currentError
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'logo'
+  const path = `${id}/branding/${crypto.randomUUID()}-${safeName}`
+  const { error: uploadError } = await supabase.storage.from('band-assets').upload(path, file, { upsert: false })
+  if (uploadError) throw storageErrorMessage(uploadError)
+  const { error: updateError } = await supabase.from('bands').update({ logo_path: path }).eq('id', id)
+  if (updateError) { await supabase.storage.from('band-assets').remove([path]); throw updateError }
+  if (current.logo_path) void supabase.storage.from('band-assets').remove([current.logo_path])
+  const { data: signed, error: signedError } = await supabase.storage.from('band-assets').createSignedUrl(path, 60 * 60)
+  if (signedError) throw signedError
+  return signed.signedUrl
+}
+
+export async function removeBandLogo(): Promise<void> {
+  if (!supabase) { localStorage.removeItem(bandLogoKey); return }
+  if (offline()) throw new Error('Connecta’t a internet per treure la imatge de l’espai compartit.')
+  const id = await bandId()
+  const { data, error } = await supabase.from('bands').select('logo_path').eq('id', id).single()
+  if (error) throw error
+  const { error: updateError } = await supabase.from('bands').update({ logo_path: null }).eq('id', id)
+  if (updateError) throw updateError
+  if (data.logo_path) { const { error: removeError } = await supabase.storage.from('band-assets').remove([data.logo_path]); if (removeError) throw removeError }
 }
 
 export async function saveBandName(value: string): Promise<string> {

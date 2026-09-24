@@ -35,6 +35,7 @@ Tresoreria registra moviments manuals; les vendes de marxandatge de cada fitxa s
 13. Per afegir talles i estoc independent a cada talla de marxandatge, executa `supabase/migrations/202609240010_merch_sizes.sql`.
 14. Després de la migració 010, executa `supabase/migrations/202609240011_merch_stock_guard.sql` per conservar correctament les vendes històriques sense talla i impedir reduccions d’estoc per sota de les unitats venudes.
 15. Per canviar el nom de l’espai compartit, executa `supabase/migrations/202609240012_workspace_name.sql`.
+16. Per pujar un logotip o una imatge de la banda, executa `supabase/migrations/202609240013_band_logo.sql`. La imatge es desa en un bucket privat i només la poden consultar els membres de la banda.
 15. Per poder personalitzar el nom de l’espai de la banda, executa `supabase/migrations/202609240012_workspace_name.sql`.
 
 ## Provar des del mòbil, fora de localhost
