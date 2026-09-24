@@ -127,6 +127,7 @@ export interface Concert {
   status: ConcertStatus
   venue: string
   city: string
+  country: string
   address: string
   feeAmount: number
   feePaid: number
@@ -162,7 +163,7 @@ export function createId(): string {
 export function newConcert(): Concert {
   return {
     id: createId(), title: '', date: '', status: 'en_converses', venue: '',
-    city: '', address: '', feeAmount: 0, feePaid: 0, details: emptyDetails(),
+    city: '', country: '', address: '', feeAmount: 0, feePaid: 0, details: emptyDetails(),
   }
 }
 

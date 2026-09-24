@@ -175,8 +175,9 @@ export async function importBackup(backup: AppBackup): Promise<void> {
   const ownPath = (path?: string) => path?.startsWith(`${currentBandId}/`) ? path : undefined
 
   for (const concert of backup.concerts) {
-    const safeConcert: Concert = {
+const safeConcert: Concert = {
       ...concert,
+      country: concert.country || '',
       updatedAt: concertVersions.get(concert.id),
       details: {
         ...concert.details,
@@ -224,7 +225,7 @@ function demoConcerts(): Concert[] {
   return [
     {
       id: 'demo-1', title: 'Festa Major de la Plaça', date: dateFromNow(12), status: 'confirmat',
-      venue: 'Plaça del Mercat', city: 'Vilabona', address: 'Plaça del Mercat, 1, Vilabona',
+      venue: 'Plaça del Mercat', city: 'Vilabona', country: 'Espanya', address: 'Plaça del Mercat, 1, Vilabona',
       feeAmount: 1200, feePaid: 0,
       details: {
         ...emptyDetails(), contactName: 'Marta Soler', contactPhone: '600 123 456',
@@ -249,12 +250,12 @@ function demoConcerts(): Concert[] {
     },
     {
       id: 'demo-2', title: 'Sala La Farinera', date: dateFromNow(28), status: 'reservat',
-      venue: 'La Farinera', city: 'Girona', address: '', feeAmount: 850, feePaid: 0,
+      venue: 'La Farinera', city: 'Girona', country: 'Espanya', address: '', feeAmount: 850, feePaid: 0,
       details: { ...emptyDetails(), contactName: 'Jordi Puig', lodging: 'no' },
     },
     {
       id: 'demo-3', title: 'Cicle Sons de Tardor', date: dateFromNow(-16), status: 'realitzat',
-      venue: 'Teatre Principal', city: 'Reus', address: 'Carrer Major, 12, Reus',
+      venue: 'Teatre Principal', city: 'Reus', country: 'Espanya', address: 'Carrer Major, 12, Reus',
       feeAmount: 1000, feePaid: 1000,
       details: {
         ...emptyDetails(), dinner: 'no', lodging: 'no', merchSales: 215,
@@ -272,6 +273,7 @@ interface ConcertRow {
   status: Concert['status']
   venue: string
   city: string
+  country: string
   address: string
   fee_amount: number
   fee_paid: number
@@ -281,7 +283,7 @@ interface ConcertRow {
 function fromRow(row: ConcertRow): Concert {
   return {
     id: row.id, updatedAt: row.updated_at, title: row.title, date: row.date, status: row.status,
-    venue: row.venue, city: row.city, address: row.address,
+    venue: row.venue, city: row.city, country: row.country ?? '', address: row.address,
     feeAmount: Number(row.fee_amount), feePaid: Number(row.fee_paid),
     details: { ...emptyDetails(), ...row.details },
   }
@@ -339,6 +341,7 @@ export async function saveConcert(concert: Concert): Promise<Concert> {
     status: concert.status,
     venue: concert.venue.trim(),
     city: concert.city.trim(),
+    country: concert.country.trim(),
     address: concert.address.trim(),
     fee_amount: concert.feeAmount,
     fee_paid: concert.feePaid,

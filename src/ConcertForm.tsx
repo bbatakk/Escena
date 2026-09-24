@@ -80,8 +80,9 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
               <label className="field field-span">Nom del concert <input required autoFocus value={concert.title} onChange={(e) => setField('title', e.target.value)} placeholder="Ex. Festa Major de la Plaça" /></label>
               <label className="field">Data <input required type="date" value={concert.date} onChange={(e) => setField('date', e.target.value)} /></label>
               <label className="field">Estat <select value={concert.status} onChange={(e) => setField('status', e.target.value as Concert['status'])}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              <label className="field">Sala o espai <input value={concert.venue} onChange={(e) => setField('venue', e.target.value)} placeholder="Ex. Sala La Farinera" /></label>
+              <label className="field field-span">Sala o espai <input value={concert.venue} onChange={(e) => setField('venue', e.target.value)} placeholder="Ex. Sala La Farinera" /></label>
               <label className="field">Població <input value={concert.city} onChange={(e) => setField('city', e.target.value)} placeholder="Ex. Girona" /></label>
+              <label className="field">País <input value={concert.country} onChange={(e) => setField('country', e.target.value)} placeholder="Ex. Espanya" /></label>
               <label className="field field-span">Adreça <input value={concert.address} onChange={(e) => setField('address', e.target.value)} placeholder="Adreça de l'actuació" /></label>
             </div>
           </section>
