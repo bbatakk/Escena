@@ -314,6 +314,20 @@ export async function saveBandDocument(document: BandDocument): Promise<BandDocu
   return fromLibraryRow(data as LibraryRow)
 }
 
+export async function deleteBandDocument(document: BandDocument): Promise<void> {
+  if (!supabase) {
+    const all = await listBandDocuments()
+    localStorage.setItem(libraryKey, JSON.stringify(all.filter((item) => item.id !== document.id)))
+    return
+  }
+  const concerts = await listConcerts()
+  const used = concerts.some((concert) => concert.details.documents.some((item) => item.libraryId === document.id || (document.storagePath && item.storagePath === document.storagePath)))
+  if (used) throw new Error('No es pot eliminar: aquest document s’utilitza en una fitxa de concert.')
+  if (document.storagePath) await removeConcertDocumentFile(document.storagePath)
+  const { error } = await supabase.from('band_documents').delete().eq('id', document.id)
+  if (error) throw error
+}
+
 export async function uploadBandDocument(document: BandDocument, file: File): Promise<BandDocument> {
   if (!supabase) throw new Error('La pujada de fitxers només està disponible amb Supabase.')
   if (file.size > maxDocumentBytes) throw new Error('El fitxer no pot superar els 20 MB.')
