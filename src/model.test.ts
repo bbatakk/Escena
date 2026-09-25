@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { getPending, merchRevenueByConcert, newConcert, totalMerchRevenue } from './model'
+import { commissionRate, concertSettlement, getPending, merchRevenueByConcert, newConcert, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
+
+describe('discogràfica i liquidació del catxet', () => {
+  const agreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }, { above: 1000, percent: 20 }] }
+  it('fa servir llindars estrictes i el tipus sobre tot el catxet', () => {
+    expect([500, 500.01, 1000, 1000.01, 1200].map((fee) => commissionRate(fee, agreement))).toEqual([0, 15, 15, 20, 20])
+    expect(concertSettlement({ ...newConcert(), feeAmount: 1200, feePaid: 600, details: { ...newConcert().details, management: 'discografica', labelAgreement: agreement } })).toMatchObject({ projectedCommission: 240, projectedNet: 960, paidCommission: 90, netPaid: 510, paidRate: 15 })
+  })
+  it('deixa tot el catxet a la banda si el concert és seu o no té discogràfica', () => {
+    const concert = newConcert(); concert.feePaid = 600
+    expect(concertSettlement(concert).netPaid).toBe(600)
+    concert.details.management = 'banda'; concert.details.labelAgreement = agreement
+    expect(concertSettlement(concert, agreement).netPaid).toBe(600)
+  })
+  it('respecta la còpia històrica i deixa sense classificar els imports de concerts amb gestió desconeguda', () => {
+    const concert = newConcert(); concert.feeAmount = 1200; concert.feePaid = 600
+    expect(concertSettlement(concert, agreement).unresolved).toBe(true)
+    concert.details.management = 'discografica'; concert.details.labelAgreement = agreement
+    expect(concertSettlement(concert, { name: 'Segell nou', tiers: [{ above: 0, percent: 50 }] }).netPaid).toBe(510)
+  })
+  it('suma els catxets nets cobrats, independentment del marxandatge i dels moviments manuals', () => {
+    const managed = newConcert(); managed.feePaid = 600; managed.details.management = 'discografica'; managed.details.labelAgreement = agreement
+    const selfManaged = newConcert(); selfManaged.feePaid = 1000; selfManaged.details.management = 'banda'
+    const unknown = newConcert(); unknown.feePaid = 300
+    expect(totalNetConcertFees([managed, selfManaged, unknown], agreement)).toBe(1510)
+    expect(totalNetConcertFees([managed, selfManaged, unknown], null)).toBe(1810)
+  })
+  it('rebutja trams sense ordre, percentatges fora de rang o sense segell', () => {
+    expect(() => validateLabelAgreement({ name: '', tiers: agreement.tiers })).toThrow()
+    expect(() => validateLabelAgreement({ name: 'S', tiers: [{ above: 1000, percent: 20 }, { above: 500, percent: 15 }] })).toThrow()
+    expect(() => validateLabelAgreement({ name: 'S', tiers: [{ above: 0, percent: 101 }] })).toThrow()
+  })
+})
 
 describe('pendents derivats de la fitxa', () => {
   it('no converteix dades opcionals desconegudes en tasques', () => {

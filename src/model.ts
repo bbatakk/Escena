@@ -2,6 +2,43 @@ export type ConcertStatus = 'en_converses' | 'reservat' | 'confirmat' | 'realitz
 export type Answer = 'pendent' | 'si' | 'no'
 export type DocumentStatus = 'pendent' | 'fet' | 'no_cal'
 
+export interface CommissionTier { above: number; percent: number }
+export interface LabelAgreement { name: string; tiers: CommissionTier[] }
+export type ConcertManager = 'pendent' | 'banda' | 'discografica'
+
+export function validateLabelAgreement(value: LabelAgreement): LabelAgreement {
+  const name = value.name.trim()
+  if (!name || name.length > 80 || !Array.isArray(value.tiers) || !value.tiers.length || value.tiers.length > 20) throw new Error('Indica el nom de la discogràfica i almenys un tram.')
+  const tiers = value.tiers.map((tier) => ({ above: tier.above, percent: tier.percent }))
+  if (tiers.some((tier) => !Number.isFinite(tier.above) || tier.above < 0 || Math.abs(Math.round(tier.above * 100) - tier.above * 100) > 1e-6 || !Number.isFinite(tier.percent) || tier.percent < 0 || tier.percent > 100 || Math.abs(Math.round(tier.percent * 100) - tier.percent * 100) > 1e-6) || tiers.some((tier, index) => index > 0 && tier.above <= tiers[index - 1].above)) throw new Error('Els llindars han de ser creixents i els percentatges entre 0 i 100, amb un màxim de dos decimals.')
+  return { name, tiers }
+}
+
+export function commissionRate(amount: number, agreement: LabelAgreement): number {
+  return agreement.tiers.reduce((rate, tier) => amount > tier.above ? tier.percent : rate, 0)
+}
+
+export function concertSettlement(concert: Concert, currentLabel?: LabelAgreement | null) {
+  const grossAgreed = Math.max(0, concert.feeAmount)
+  const grossPaid = Math.max(0, concert.feePaid)
+  const management = concert.details.management || 'pendent'
+  const agreement = concert.details.labelAgreement
+  const unresolved = management === 'discografica' && !agreement || management === 'pendent' && Boolean(currentLabel?.name)
+  if (unresolved) return { unresolved: true, grossAgreed, grossPaid, projectedCommission: 0, projectedNet: 0, paidCommission: 0, netPaid: 0, paidRate: 0 }
+  const projectedRate = management === 'discografica' && agreement ? commissionRate(grossAgreed, agreement) : 0
+  const paidRate = management === 'discografica' && agreement ? commissionRate(grossPaid, agreement) : 0
+  const projectedCommission = Math.round(grossAgreed * projectedRate) / 100
+  const paidCommission = Math.round(grossPaid * paidRate) / 100
+  return { unresolved: false, grossAgreed, grossPaid, projectedCommission, projectedNet: grossAgreed - projectedCommission, paidCommission, netPaid: grossPaid - paidCommission, paidRate }
+}
+
+export function totalNetConcertFees(concerts: Concert[], currentLabel?: LabelAgreement | null): number {
+  return concerts.reduce((sum, concert) => {
+    const settlement = concertSettlement(concert, currentLabel)
+    return sum + (settlement.unresolved ? 0 : settlement.netPaid)
+  }, 0)
+}
+
 export interface ScheduleItem {
   id: string
   label: string
@@ -93,6 +130,8 @@ export interface BandMaterial { id: string; name: string; category: string; acti
 export interface SetlistTemplate { id: string; name: string; songs: string[]; active: boolean }
 
 export interface ConcertDetails {
+  management?: ConcertManager
+  labelAgreement?: LabelAgreement
   conditions: string
   cancellation: string
   contactName: string
@@ -144,6 +183,7 @@ export const statusLabels: Record<ConcertStatus, string> = {
 
 export function emptyDetails(): ConcertDetails {
   return {
+    management: 'pendent',
     conditions: '', cancellation: '', contactName: '', contactPhone: '', contactEmail: '',
     team: '', personIds: [], travel: '', loadIn: '', parking: '', dinner: 'pendent', dinnerDetails: '',
     lodging: 'pendent', lodgingDetails: '', lodgingAddress: '', schedule: [], documents: [], materials: [],

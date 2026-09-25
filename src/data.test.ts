@@ -23,6 +23,12 @@ describe('validació de backups', () => {
     expect(validateBackup({ ...emptyBackup, version: backupVersion + 1 })).toBe(false)
     expect(validateBackup({ ...emptyBackup, merchSales: [{ id: 'sale' }] })).toBe(false)
   })
+
+  it('accepta backups antics i valida les condicions opcionals de discogràfica', () => {
+    expect(validateBackup(emptyBackup)).toBe(true)
+    expect(validateBackup({ ...emptyBackup, labelAgreement: { name: 'Segell', tiers: [{ above: 500, percent: 15 }] } })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, labelAgreement: { name: 'Segell', tiers: [{ above: 500, percent: 150 }] } })).toBe(false)
+  })
 })
 
 describe('recursos actius en mode local', () => {

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { type BandDocument, type BandMaterial, type BandPerson, type Concert, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails } from './model'
+import { type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails, validateLabelAgreement } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -28,6 +28,7 @@ const setlistsKey = 'escena-demo-setlists-v1'
 const bandNameKey = 'escena-demo-band-name-v1'
 const bandLogoKey = 'escena-demo-band-logo-v1'
 const bandLogoUrlCacheKey = 'escena-band-logo-url-v1'
+const bandLabelKey = 'escena-band-label-v1'
 const defaultBandName = 'La nostra banda'
 
 export const backupVersion = 1
@@ -36,6 +37,7 @@ export interface AppBackup {
   exportedAt: string
   theme?: string
   workspaceName?: string
+  labelAgreement?: LabelAgreement | null
   concerts: Concert[]
   library: BandDocument[]
   money: MoneyMovement[]
@@ -47,8 +49,14 @@ export interface AppBackup {
 }
 
 export async function exportBackup(): Promise<AppBackup> {
-  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists, workspaceName] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), getBandName()])
-  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, concerts, library, money, merchProducts, merchSales, people, materials, setlists }
+  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists, workspaceName, labelAgreement] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), getBandName(), getBandLabel()])
+  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, labelAgreement, concerts, library, money, merchProducts, merchSales, people, materials, setlists }
+}
+
+function validLabel(value: unknown): boolean {
+  if (value === null) return true
+  if (!isRecord(value) || typeof value.name !== 'string' || !Array.isArray(value.tiers) || !value.tiers.every((tier) => isRecord(tier) && typeof tier.above === 'number' && typeof tier.percent === 'number')) return false
+  try { validateLabelAgreement(value as unknown as LabelAgreement); return true } catch { return false }
 }
 
 export function validateBackup(value: unknown): value is AppBackup {
@@ -56,6 +64,7 @@ export function validateBackup(value: unknown): value is AppBackup {
   const backup = value as Partial<AppBackup>
   const hasId = (item: unknown) => isRecord(item) && typeof item.id === 'string' && item.id.length > 0
   return backup.version === backupVersion && (backup.workspaceName === undefined || (typeof backup.workspaceName === 'string' && backup.workspaceName.trim().length > 0 && backup.workspaceName.length <= 80))
+    && (backup.labelAgreement === undefined || validLabel(backup.labelAgreement))
     && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && isRecord(item.details) && Array.isArray(item.details.documents) && Array.isArray(item.details.materials))
     && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string')
     && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && typeof item.amount === 'number' && typeof item.date === 'string')
@@ -73,6 +82,43 @@ export async function getBandName(): Promise<string> {
   const name = data.name?.trim() || defaultBandName
   localStorage.setItem(bandNameKey, name)
   return name
+}
+
+export function getCachedBandLabel(): LabelAgreement | null {
+  if (supabase) return null
+  try { const saved: unknown = JSON.parse(localStorage.getItem(bandLabelKey) || 'null'); return validLabel(saved) ? saved as LabelAgreement | null : null } catch { return null }
+}
+
+export async function getBandLabel(): Promise<LabelAgreement | null> {
+  if (!supabase) return getCachedBandLabel()
+  const { data: auth } = await supabase.auth.getSession()
+  if (!auth.session) throw new Error('Cal iniciar sessió per consultar la discogràfica.')
+  const cacheKey = `${bandLabelKey}-${auth.session.user.id}`
+  if (offline()) {
+    const cached = localStorage.getItem(cacheKey)
+    if (cached === null) throw new Error('No hi ha cap configuració de discogràfica disponible sense connexió.')
+    const value: unknown = JSON.parse(cached)
+    if (!validLabel(value)) throw new Error('La configuració guardada no és vàlida.')
+    return value as LabelAgreement | null
+  }
+  const { data, error } = await supabase.from('bands').select('label_name,label_tiers').eq('id', await bandId()).single()
+  if (error) throw error
+  const label = data.label_name ? validateLabelAgreement({ name: data.label_name, tiers: data.label_tiers }) : null
+  localStorage.setItem(cacheKey, JSON.stringify(label))
+  return label
+}
+
+export async function saveBandLabel(value: LabelAgreement | null): Promise<LabelAgreement | null> {
+  const label = value ? validateLabelAgreement(value) : null
+  if (supabase) {
+    if (offline()) throw new Error('Connecta’t a internet per canviar les condicions de la discogràfica.')
+    const { error } = await supabase.from('bands').update({ label_name: label?.name || '', label_tiers: label?.tiers || [] }).eq('id', await bandId())
+    if (error) throw error
+  }
+  const { data: auth } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
+  const cacheKey = supabase && auth.session ? `${bandLabelKey}-${auth.session.user.id}` : bandLabelKey
+  localStorage.setItem(cacheKey, JSON.stringify(label))
+  return label
 }
 
 export interface BandProfile { name: string; logoUrl?: string }
@@ -162,6 +208,7 @@ export function importLocalBackup(backup: AppBackup): void {
   localStorage.setItem(setlistsKey, JSON.stringify(backup.setlists))
   if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
   if (backup.workspaceName) localStorage.setItem(bandNameKey, backup.workspaceName)
+  if (backup.labelAgreement !== undefined) localStorage.setItem(bandLabelKey, JSON.stringify(backup.labelAgreement))
 }
 
 export async function importBackup(backup: AppBackup): Promise<void> {
@@ -203,6 +250,7 @@ export async function importBackup(backup: AppBackup): Promise<void> {
   }
   if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
   if (backup.workspaceName) await saveBandName(backup.workspaceName)
+  if (backup.labelAgreement !== undefined) await saveBandLabel(backup.labelAgreement)
 }
 
 function offline(): boolean { return typeof navigator !== 'undefined' && !navigator.onLine }
@@ -321,6 +369,10 @@ export async function listConcerts(): Promise<Concert[]> {
 
 export async function saveConcert(concert: Concert): Promise<Concert> {
   concert = normalizeConcert(concert)
+  if (concert.details.management === 'discografica') {
+    if (!concert.details.labelAgreement) throw new Error('Indica les condicions de la discogràfica abans de desar el concert.')
+    concert = { ...concert, details: { ...concert.details, labelAgreement: validateLabelAgreement(concert.details.labelAgreement) } }
+  } else if (concert.details.labelAgreement) concert = { ...concert, details: { ...concert.details, labelAgreement: undefined } }
   if (!supabase) {
     const next = localConcerts().filter((item) => item.id !== concert.id)
     const saved = { ...concert, updatedAt: new Date().toISOString() }

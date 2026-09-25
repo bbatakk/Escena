@@ -29,6 +29,15 @@ describe('plans de l’assistent', () => {
     expect(() => parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { materials: [] } } }] }, [concert])).toThrow()
   })
 
+  it('copia les condicions quan l’IA assigna el concert al segell i no deixa inventar trams', () => {
+    const agreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }, { above: 1000, percent: 20 }] }
+    const request = { type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { management: 'discografica' } } }] }
+    expect(() => parsePlan(request, [concert])).toThrow()
+    expect(parsePlan(request, [concert], [], [], undefined, agreement)).toMatchObject({ updates: [{ changes: { details: { management: 'discografica', labelAgreement: agreement } } }] })
+    expect(() => parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { labelAgreement: agreement } } }] }, [concert], [], [], undefined, agreement)).toThrow()
+    expect(parsePlan({ type: 'create_concert', draft: { title: 'Nou concert', details: { management: 'discografica' } } }, [], [], [], undefined, agreement)).toMatchObject({ draft: { details: { management: 'discografica', labelAgreement: agreement } } })
+  })
+
   it('rebutja seleccions parcials, duplicades o camps no permesos', () => {
     expect(() => parsePlan({ type: 'delete_concerts', concertIds: [concert.id, 'inventat'] }, [concert])).toThrow()
     expect(() => parsePlan({ type: 'delete_concerts', concertIds: [concert.id, concert.id] }, [concert])).toThrow()

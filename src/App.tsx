@@ -8,8 +8,8 @@ import {
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
-import { cloudConfigured, deleteConcert, deleteMerchSale, getBandProfile, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
-import { createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type MerchProduct, type MerchSale, type SetlistTemplate } from './model'
+import { cloudConfigured, deleteConcert, deleteMerchSale, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
+import { concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
@@ -143,7 +143,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   return <div className="info-row"><span>{label}</span><strong>{children || '—'}</strong></div>
 }
 
-function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemoveFile }: { concert: Concert; onBack: () => void; onEdit: () => void; onDelete: () => void; onToggle: (id: string) => Promise<void>; onUpload: (id: string, file: File) => Promise<void>; onRemoveFile: (id: string) => Promise<void> }) {
+function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, onUpload, onRemoveFile }: { concert: Concert; labelAgreement: LabelAgreement | null; onBack: () => void; onEdit: () => void; onDelete: () => void; onToggle: (id: string) => Promise<void>; onUpload: (id: string, file: File) => Promise<void>; onRemoveFile: (id: string) => Promise<void> }) {
   const [busyMaterial, setBusyMaterial] = useState(false)
   const [materialError, setMaterialError] = useState('')
   const [busyDocument, setBusyDocument] = useState<string | null>(null)
@@ -157,6 +157,7 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
   const [saleError, setSaleError] = useState('')
   const [merchSearch, setMerchSearch] = useState('')
   const d = concert.details
+  const settlement = concertSettlement(concert, labelAgreement)
   useEffect(() => {
     let active = true
     const files = concert.details.documents.filter((doc) => doc.storagePath)
@@ -203,7 +204,7 @@ function Detail({ concert, onBack, onEdit, onDelete, onToggle, onUpload, onRemov
     <div className="detail-body"><div className="detail-main">
       <section className="pending-panel"><div className="panel-title"><div className="panel-title-icon"><CircleHelp size={19} /></div><div><span className="eyebrow">SEGUIMENT</span><h2>Coses pendents <span className="count-pill">{pending.length}</span></h2></div></div>{pending.length ? <ul className="pending-list">{pending.map((item, index) => <li key={`${item}-${index}`}><span className="pending-marker" />{item}</li>)}</ul> : <p className="empty-pending"><Check size={18} /> No hi ha res pendent segons les dades d'aquesta fitxa.</p>}</section>
 
-      <section className="detail-section"><div className="detail-section-heading"><Wallet size={19} /><h2>Acord</h2></div><div className="info-rows"><InfoRow label="Catxet acordat">{formatMoney(concert.feeAmount)}</InfoRow><InfoRow label="Catxet cobrat">{formatMoney(concert.feePaid)}</InfoRow>{d.conditions ? <InfoRow label="Condicions">{d.conditions}</InfoRow> : null}{d.cancellation ? <InfoRow label="Cancel·lació">{d.cancellation}</InfoRow> : null}</div></section>
+      <section className="detail-section"><div className="detail-section-heading"><Wallet size={19} /><h2>Acord</h2></div><div className="info-rows"><InfoRow label="Gestionat per">{d.management === 'discografica' ? d.labelAgreement?.name || 'Discogràfica sense condicions' : d.management === 'banda' ? 'La banda' : 'Per concretar'}</InfoRow><InfoRow label="Catxet acordat (brut)">{formatMoney(concert.feeAmount)}</InfoRow><InfoRow label="Catxet cobrat (brut)">{formatMoney(concert.feePaid)}</InfoRow>{settlement.unresolved ? <p className="label-concert-note">Indica qui ha gestionat el concert per calcular el net de la banda.</p> : <><InfoRow label="Comissió prevista">{formatMoney(settlement.projectedCommission)}</InfoRow><InfoRow label="Net previst">{formatMoney(settlement.projectedNet)}</InfoRow><InfoRow label="Comissió sobre el cobrat">{formatMoney(settlement.paidCommission)}{d.management === 'discografica' ? ` (${settlement.paidRate} %)` : ''}</InfoRow><InfoRow label="Net cobrat per la banda">{formatMoney(settlement.netPaid)}</InfoRow></>}{d.conditions ? <InfoRow label="Condicions">{d.conditions}</InfoRow> : null}{d.cancellation ? <InfoRow label="Cancel·lació">{d.cancellation}</InfoRow> : null}</div></section>
 
       <section className="detail-section"><div className="detail-section-heading"><Clock3 size={19} /><h2>Horaris i logística</h2></div>{sortedSchedule.length ? <div className="timeline">{sortedSchedule.map((item) => <div className="timeline-item" key={item.id}><span className="timeline-time">{item.time || '—'}</span><span className="timeline-line" /><div><strong>{item.label || item.kind || 'Sense nom'}</strong>{item.place ? <p>{item.place}</p> : null}</div></div>)}</div> : <p className="section-empty">Encara no hi ha horaris afegits.</p>}{d.travel || d.loadIn || d.parking ? <div className="info-rows subsection-rows">{d.travel ? <InfoRow label="Desplaçament">{d.travel}</InfoRow> : null}{d.loadIn ? <InfoRow label="Accés de càrrega">{d.loadIn}</InfoRow> : null}{d.parking ? <InfoRow label="Aparcament">{d.parking}</InfoRow> : null}</div> : null}</section>
 
@@ -243,6 +244,8 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [workspaceName, setWorkspaceName] = useState(initialWorkspaceProfile.name)
   const [workspaceLogo, setWorkspaceLogo] = useState<string | undefined>(initialWorkspaceProfile.logoUrl)
+  const [labelAgreement, setLabelAgreement] = useState<LabelAgreement | null>(() => getCachedBandLabel())
+  const [labelReady, setLabelReady] = useState(!cloudConfigured)
   const [workspaceProfileLoading, setWorkspaceProfileLoading] = useState(() => cloudConfigured && (!initialWorkspaceProfile.name || !initialWorkspaceProfile.logoUrl))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [formInitial, setFormInitial] = useState<Concert | null>(null)
@@ -260,6 +263,14 @@ export default function App() {
     let active = true
     setWorkspaceProfileLoading(true)
     getBandProfile().then((profile) => { if (active) { setWorkspaceName(profile.name); setWorkspaceLogo(profile.logoUrl) } }).catch(() => {}).finally(() => { if (active) setWorkspaceProfileLoading(false) })
+    return () => { active = false }
+  }, [authReady, session?.user.id, online])
+
+  useEffect(() => {
+    if (!authReady || (cloudConfigured && !session)) return
+    let active = true
+    setLabelReady(false)
+    getBandLabel().then((label) => { if (active) { setLabelAgreement(label); setLabelReady(true) } }).catch(() => { if (active) setError('No s’ha pogut carregar la discogràfica. Revisa la connexió i la migració 016 de Supabase.') })
     return () => { active = false }
   }, [authReady, session?.user.id, online])
 
@@ -366,19 +377,20 @@ export default function App() {
       <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'home' ? 'Inici' : screen === 'calendar' ? 'Calendari' : screen === 'assistant' ? 'IA' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : screen === 'treasury' ? 'Tresoreria' : screen === 'merch' ? 'Marxandatge' : screen === 'people' ? 'Persones' : screen === 'materials' ? 'Material' : screen === 'setlists' ? 'Setlists' : screen === 'settings' ? 'Configuració' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? (online ? 'EN LÍNIA' : 'SENSE CONNEXIÓ') : 'DEMO LOCAL'} <span className={`online-dot ${online ? '' : 'offline-dot'}`} /></span></header>
       <div className="content-area">
         {error ? <div className="global-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Tancar avís"><X size={16} /></button></div> : null}
-        {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
-        {loading ? <div className="content-loading">Carregant concerts…</div> : null}
+         {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
+         {loading ? <div className="content-loading">Carregant concerts…</div> : null}
+          {!labelReady && ['treasury', 'settings', 'form', 'detail', 'assistant'].includes(screen) ? <div className="content-loading">No es pot mostrar la liquidació fins que es carreguin les condicions de la banda. Comprova la connexió o la migració 016.</div> : null}
         {screen === 'library' ? <Suspense fallback={<div className="content-loading">Carregant documents…</div>}><BandLibrary /></Suspense> : null}
-        {screen === 'treasury' ? <Suspense fallback={<div className="content-loading">Carregant tresoreria…</div>}><Treasury concerts={concerts} /></Suspense> : null}
+         {screen === 'treasury' && labelReady ? <Suspense fallback={<div className="content-loading">Carregant tresoreria…</div>}><Treasury concerts={concerts} labelAgreement={labelAgreement} /></Suspense> : null}
         {screen === 'merch' ? <Suspense fallback={<div className="content-loading">Carregant marxandatge…</div>}><Merch concerts={concerts} /></Suspense> : null}
          {screen === 'people' ? <Suspense fallback={<div className="content-loading">Carregant persones…</div>}><BandPeople /></Suspense> : null}
          {screen === 'materials' ? <Suspense fallback={<div className="content-loading">Carregant material…</div>}><BandMaterials /></Suspense> : null}
          {screen === 'setlists' ? <Suspense fallback={<div className="content-loading">Carregant setlists…</div>}><Setlists /></Suspense> : null}
-         {screen === 'settings' ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} /> : null}
-          {screen === 'assistant' ? <ConcertAssistant concerts={concerts} workspaceName={workspaceName} onWorkspaceNameChange={setWorkspaceName} onThemeChange={(value) => { setTheme(value); document.documentElement.dataset.theme = value }} onCreateDraft={(draft) => startForm(draft)} onUpdateConcert={(concert) => save(concert, false)} onSaveSetlist={createAssistantSetlist} onDeleteConcert={deleteAssistantConcert} onSavePerson={createAssistantPerson} /> : null}
+          {screen === 'settings' && labelReady ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} labelAgreement={labelAgreement} onLabelChange={setLabelAgreement} /> : null}
+           {screen === 'assistant' && labelReady ? <ConcertAssistant concerts={concerts} workspaceName={workspaceName} labelAgreement={labelAgreement} onWorkspaceNameChange={setWorkspaceName} onThemeChange={(value) => { setTheme(value); document.documentElement.dataset.theme = value }} onCreateDraft={(draft) => startForm(draft)} onUpdateConcert={(concert) => save(concert, false)} onSaveSetlist={createAssistantSetlist} onDeleteConcert={deleteAssistantConcert} onSavePerson={createAssistantPerson} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}
-         {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate(formReturnScreen)} /> : null}
-         {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
+          {!loading && labelReady && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} labelAgreement={labelAgreement} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate(formReturnScreen)} /> : null}
+          {!loading && labelReady && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} labelAgreement={labelAgreement} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
           <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>
           <div className="overview-strip"><div className="overview-next"><div className="overview-icon"><Music2 size={22} /></div><div><span className="eyebrow">PROPER CONCERT</span><strong>{next ? next.title : 'Encara no hi ha cap data'}</strong><small>{next ? `${formatDate(next.date)} · ${concertPlace(next) || 'Lloc per concretar'}` : 'Afegeix un concert per començar'}</small></div>{next ? <button aria-label={`Obrir ${next.title}`} onClick={() => open(next.id)} className="overview-arrow"><ArrowRight size={19} /></button> : null}</div><div className="overview-stat"><span className="eyebrow">PER RESOLDRE</span><strong>{totalPending.toString().padStart(2, '0')}</strong><small>{totalPending === 1 ? 'qüestió pendent' : 'qüestions pendents'}</small></div></div>

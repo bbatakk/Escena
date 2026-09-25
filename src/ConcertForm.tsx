@@ -1,15 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { listBandDocuments, listResource } from './data'
-import { createId, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type SetlistTemplate, statusLabels } from './model'
+import { concertSettlement, createId, formatMoney, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type LabelAgreement, type SetlistTemplate, statusLabels } from './model'
 
 interface Props {
   initial: Concert
   onSave: (concert: Concert) => Promise<void>
   onCancel: () => void
+  labelAgreement: LabelAgreement | null
 }
 
-export default function ConcertForm({ initial, onSave, onCancel }: Props) {
+export default function ConcertForm({ initial, onSave, onCancel, labelAgreement }: Props) {
   const [concert, setConcert] = useState<Concert>(initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -20,6 +21,7 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
   const [catalog, setCatalog] = useState<BandMaterial[]>([])
   const [setlists, setSetlists] = useState<SetlistTemplate[]>([])
   const d = concert.details
+  const settlement = concertSettlement(concert, labelAgreement)
 
   useEffect(() => {
     let active = true
@@ -49,6 +51,10 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
 
   function setDetail<K extends keyof ConcertDetails>(key: K, value: ConcertDetails[K]) {
     setConcert((prev) => ({ ...prev, details: { ...prev.details, [key]: value } }))
+  }
+
+  function setManagement(management: 'pendent' | 'banda' | 'discografica') {
+    setConcert((previous) => ({ ...previous, details: { ...previous.details, management, labelAgreement: management === 'discografica' ? previous.details.management === 'discografica' && previous.details.labelAgreement || labelAgreement || undefined : undefined } }))
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -91,6 +97,10 @@ export default function ConcertForm({ initial, onSave, onCancel }: Props) {
             <div className="section-heading"><span className="section-index">02</span><div><h2>Acord</h2><p>Què s'ha pactat amb l'organització.</p></div></div>
             <div className="fields">
               <label className="field">Catxet acordat (€) <input type="number" min="0" step="0.01" value={concert.feeAmount} onChange={(e) => setField('feeAmount', Number(e.target.value))} /></label>
+              <label className="field">Gestionat per <select value={d.management || 'pendent'} onChange={(e) => setManagement(e.target.value as 'pendent' | 'banda' | 'discografica')}><option value="pendent">Per concretar</option><option value="banda">La banda</option>{labelAgreement || d.labelAgreement ? <option value="discografica">Discogràfica</option> : null}</select></label>
+              {d.management === 'discografica' && d.labelAgreement ? <p className="label-concert-note">{d.labelAgreement.name} · Condicions guardades per a aquest concert. Els canvis a Configuració no l’afecten.</p> : null}
+              {d.management === 'discografica' && !d.labelAgreement ? <p className="form-error">Configura primer els trams de la discogràfica.</p> : null}
+              {!settlement.unresolved && concert.feeAmount > 0 ? <div className="label-concert-summary"><span>Net previst per a la banda</span><strong>{formatMoney(settlement.projectedNet)}</strong><small>Comissió prevista: {formatMoney(settlement.projectedCommission)}. El tram definitiu depèn del total cobrat.</small></div> : null}
               <label className="field">Condicions <textarea rows={3} value={d.conditions} onChange={(e) => setDetail('conditions', e.target.value)} placeholder="Despeses cobertes, forma de pagament..." /></label>
               <label className="field">Condicions de cancel·lació <textarea rows={2} value={d.cancellation} onChange={(e) => setDetail('cancellation', e.target.value)} /></label>
             </div>

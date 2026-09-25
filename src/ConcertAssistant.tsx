@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowRight, Bot, Check, MessageCircleQuestion, Sparkles } from 'lucide-react'
 import { cloudConfigured, deleteBandDocument, deleteMerchSale, deleteMoneyMovement, getBandName, listAllResources, listBandDocuments, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, saveBandDocument, saveBandName, saveMerchProduct, saveMerchSale, saveMoneyMovement, saveResource, supabase } from './data'
-import { createId, getPending, newConcert, statusLabels, totalMerchRevenue, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type ConcertStatus, type MerchProduct, type MoneyMovement, type PersonKind, type SetlistTemplate } from './model'
+import { concertSettlement, createId, getPending, newConcert, statusLabels, totalMerchRevenue, totalNetConcertFees, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type ConcertStatus, type LabelAgreement, type MerchProduct, type MoneyMovement, type PersonKind, type SetlistTemplate } from './model'
 import { actionFieldLabels, modeLabels, parseAppActions, sectionFields, sectionLabels, type ActionContext, type AppAction } from './assistantActions'
 import type { ThemeId } from './Settings'
 
@@ -21,8 +21,8 @@ type AssistantPlan =
   | { type: 'manage'; actions: AppAction[] }
 
 const editableFields = ['title', 'date', 'status', 'venue', 'city', 'country', 'address', 'feeAmount', 'feePaid'] as const
-const editableDetails = ['conditions', 'cancellation', 'team', 'travel', 'loadIn', 'parking', 'dinner', 'dinnerDetails', 'lodging', 'lodgingDetails', 'lodgingAddress', 'setlist', 'passes', 'expenses', 'notes', 'personIds'] as const
-const detailLabels: Record<(typeof editableDetails)[number], string> = { conditions: 'Condicions', cancellation: 'Cancel·lació', team: 'Equip', travel: 'Desplaçament', loadIn: 'Accés de càrrega', parking: 'Aparcament', dinner: 'Sopar', dinnerDetails: 'Detalls del sopar', lodging: 'Allotjament', lodgingDetails: 'Detalls de l’allotjament', lodgingAddress: 'Adreça de l’allotjament', setlist: 'Repertori', passes: 'Passis', expenses: 'Despeses', notes: 'Notes', personIds: 'Persones que hi van' }
+const editableDetails = ['management', 'conditions', 'cancellation', 'team', 'travel', 'loadIn', 'parking', 'dinner', 'dinnerDetails', 'lodging', 'lodgingDetails', 'lodgingAddress', 'setlist', 'passes', 'expenses', 'notes', 'personIds'] as const
+const detailLabels: Record<(typeof editableDetails)[number], string> = { management: 'Gestionat per', conditions: 'Condicions', cancellation: 'Cancel·lació', team: 'Equip', travel: 'Desplaçament', loadIn: 'Accés de càrrega', parking: 'Aparcament', dinner: 'Sopar', dinnerDetails: 'Detalls del sopar', lodging: 'Allotjament', lodgingDetails: 'Detalls de l’allotjament', lodgingAddress: 'Adreça de l’allotjament', setlist: 'Repertori', passes: 'Passis', expenses: 'Despeses', notes: 'Notes', personIds: 'Persones que hi van' }
 const fieldLabels: Record<(typeof editableFields)[number], string> = { title: 'Nom', date: 'Data', status: 'Estat', venue: 'Sala o espai', city: 'Població', country: 'País', address: 'Adreça', feeAmount: 'Catxet acordat', feePaid: 'Catxet cobrat' }
 const personKindLabels: Record<PersonKind, string> = { musica: 'Música', tecnic: 'Tècnic', manager: 'Mànager', contacte: 'Contacte' }
 const personNameKey = (name: string) => name.trim().normalize('NFKC').toLocaleLowerCase('ca')
@@ -50,7 +50,7 @@ async function invokeAssistant(body: Record<string, unknown>): Promise<Record<st
   return data as Record<string, unknown>
 }
 
-function makeConcertDraft(value: DraftResponse): Concert {
+function makeConcertDraft(value: DraftResponse, labelAgreement?: LabelAgreement | null): Concert {
   const concert = newConcert()
   concert.title = text(value.title)
   concert.date = validDate(text(value.date)) ? text(value.date) : ''
@@ -60,6 +60,8 @@ function makeConcertDraft(value: DraftResponse): Concert {
   const details = value.details || {}
   concert.details = {
     ...concert.details,
+    management: details.management === 'banda' ? 'banda' : details.management === 'discografica' && labelAgreement ? 'discografica' : 'pendent',
+    labelAgreement: details.management === 'discografica' && labelAgreement ? { name: labelAgreement.name, tiers: labelAgreement.tiers.map((tier) => ({ ...tier })) } : undefined,
     conditions: text(details.conditions), cancellation: text(details.cancellation), contactName: text(details.contactName),
     contactPhone: text(details.contactPhone), contactEmail: text(details.contactEmail), dinner: validAnswer(details.dinner),
     dinnerDetails: text(details.dinnerDetails), lodging: validAnswer(details.lodging), lodgingDetails: text(details.lodgingDetails),
@@ -77,11 +79,11 @@ function parseSongs(value: unknown): string[] {
   return Array.isArray(value) && value.length <= 100 && value.every((song) => typeof song === 'string' && song.trim().length > 0 && song.length <= 200) ? value.map((song: string) => song.trim()) : []
 }
 
-export function parsePlan(value: unknown, concerts: Concert[], setlists: SetlistTemplate[] = [], existingPeople: BandPerson[] = [], context?: ActionContext): AssistantPlan {
+export function parsePlan(value: unknown, concerts: Concert[], setlists: SetlistTemplate[] = [], existingPeople: BandPerson[] = [], context?: ActionContext, labelAgreement?: LabelAgreement | null): AssistantPlan {
   if (!record(value) || typeof value.type !== 'string') throw new Error('La IA no ha retornat una acció vàlida.')
   if ((value.type === 'answer' || value.type === 'analysis') && typeof value.answer === 'string') return { type: value.type, answer: value.answer }
   if (value.type === 'clarify' && typeof value.question === 'string') return { type: 'clarify', question: value.question }
-  if (value.type === 'create_concert' && record(value.draft)) return { type: 'create_concert', draft: makeConcertDraft(value.draft) }
+  if (value.type === 'create_concert' && record(value.draft)) return { type: 'create_concert', draft: makeConcertDraft(value.draft, labelAgreement) }
   if (value.type === 'manage' && context) return { type: 'manage', actions: parseAppActions(value.actions, context) }
   if (value.type === 'create_people' && Array.isArray(value.people)) {
     if (!value.people.length || value.people.length > 20) throw new Error('Cal indicar entre 1 i 20 persones.')
@@ -141,11 +143,19 @@ export function parsePlan(value: unknown, concerts: Concert[], setlists: Setlist
         for (const key of editableDetails) {
           if (!(key in raw.changes.details)) continue
           const next = raw.changes.details[key]
-          if (key === 'dinner' || key === 'lodging') { if (['pendent', 'si', 'no'].includes(String(next))) details[key] = next }
+          if (key === 'management') { if (['pendent', 'banda', 'discografica'].includes(String(next))) details[key] = next }
+          else if (key === 'dinner' || key === 'lodging') { if (['pendent', 'si', 'no'].includes(String(next))) details[key] = next }
           else if (key === 'expenses') { if (typeof next === 'number' && Number.isFinite(next) && next >= 0) details[key] = next }
           else if (key === 'personIds') { if (Array.isArray(next) && next.length <= 50 && next.every((id) => typeof id === 'string' && existingPeople.some((person) => person.id === id && person.active)) && new Set(next).size === next.length) details[key] = next }
           else if (typeof next === 'string' && next.length <= 4000) details[key] = next.trim()
           if (!(key in details)) throw new Error(`El valor de «${detailLabels[key]}» no és vàlid.`)
+        }
+        if ('management' in details) {
+          if (details.management === 'discografica') {
+            const snapshot = current.details.management === 'discografica' ? current.details.labelAgreement : labelAgreement
+            if (!snapshot) throw new Error('Configura primer la discogràfica per proposar aquest canvi.')
+            details.labelAgreement = { name: snapshot.name, tiers: snapshot.tiers.map((tier) => ({ ...tier })) }
+          } else details.labelAgreement = undefined
         }
         changes.details = details
       }
@@ -215,7 +225,7 @@ async function applyAppAction(action: AppAction, context: ActionContext, onWorks
   }
 }
 
-export default function ConcertAssistant({ concerts, workspaceName, onWorkspaceNameChange, onThemeChange, onCreateDraft, onUpdateConcert, onSaveSetlist, onDeleteConcert, onSavePerson }: { concerts: Concert[]; workspaceName: string; onWorkspaceNameChange: (name: string) => void; onThemeChange: (theme: ThemeId) => void; onCreateDraft: (draft: Concert) => void; onUpdateConcert: (concert: Concert) => Promise<void>; onSaveSetlist: (template: SetlistTemplate) => Promise<void>; onDeleteConcert: (concert: Concert) => Promise<void>; onSavePerson: (person: BandPerson) => Promise<void> }) {
+export default function ConcertAssistant({ concerts, workspaceName, labelAgreement, onWorkspaceNameChange, onThemeChange, onCreateDraft, onUpdateConcert, onSaveSetlist, onDeleteConcert, onSavePerson }: { concerts: Concert[]; workspaceName: string; labelAgreement: LabelAgreement | null; onWorkspaceNameChange: (name: string) => void; onThemeChange: (theme: ThemeId) => void; onCreateDraft: (draft: Concert) => void; onUpdateConcert: (concert: Concert) => Promise<void>; onSaveSetlist: (template: SetlistTemplate) => Promise<void>; onDeleteConcert: (concert: Concert) => Promise<void>; onSavePerson: (person: BandPerson) => Promise<void> }) {
   const [request, setRequest] = useState('')
   const [plan, setPlan] = useState<AssistantPlan | null>(null)
   const [busy, setBusy] = useState(false)
@@ -231,13 +241,13 @@ export default function ConcertAssistant({ concerts, workspaceName, onWorkspaceN
     if (!supabase || !cloudConfigured) { setError('Connecta Supabase i configura la funció d’IA per utilitzar l’assistent.'); return }
     setBusy(true); setError(''); setNotice(''); setPlan(null)
     try {
-      const context = concerts.slice(0, 300).map((concert) => ({ id: concert.id, title: concert.title, date: concert.date, status: concert.status, statusLabel: statusLabels[concert.status], venue: concert.venue, city: concert.city, country: concert.country, address: concert.address, feeAmount: concert.feeAmount, feePaid: concert.feePaid, pending: getPending(concert), schedule: concert.details.schedule.slice(0, 12), setlist: concert.details.setlist.slice(0, 1500), details: { dinner: concert.details.dinner, lodging: concert.details.lodging, lodgingAddress: concert.details.lodgingAddress, personIds: concert.details.personIds } }))
+      const context = concerts.slice(0, 300).map((concert) => ({ id: concert.id, title: concert.title, date: concert.date, status: concert.status, statusLabel: statusLabels[concert.status], venue: concert.venue, city: concert.city, country: concert.country, address: concert.address, feeAmount: concert.feeAmount, feePaid: concert.feePaid, netPaid: concertSettlement(concert, labelAgreement).unresolved ? null : concertSettlement(concert, labelAgreement).netPaid, pending: getPending(concert), schedule: concert.details.schedule.slice(0, 12), setlist: concert.details.setlist.slice(0, 1500), details: { management: concert.details.management || 'pendent', labelName: concert.details.labelAgreement?.name || '', dinner: concert.details.dinner, lodging: concert.details.lodging, lodgingAddress: concert.details.lodgingAddress, personIds: concert.details.personIds } }))
       const catalog = await loadActionContext(concerts, workspaceName)
       const { people, materials, setlists: templates, documents, money: movements, products, sales } = catalog
       setPeopleNames(new Map(people.map((person) => [person.id, person.name])))
-      const data = await invokeAssistant({ action: 'copilot', request, referenceDate: referenceDate(), concerts: context, setlists: templates.map(({ id, name, songs, active }) => ({ id, name, songs, active })), people: people.map(({ id, name, kind, active }) => ({ id, name, kind, active })), materials: materials.map(({ id, name, category, active }) => ({ id, name, category, active })), documents: documents.map(({ id, name, url, archived, fileName }) => ({ id, name, url, archived, fileName })), products: products.map(({ id, name, price, stock, sizes, active }) => ({ id, name, price, stock, sizes, active })), sales: sales.slice(0, 300).map(({ id, concertId, productId, quantity, unitPrice, size }) => ({ id, concertId, productId, quantity, unitPrice, size })), workspaceName, theme: catalog.theme, analytics: { concertCount: concerts.length, concertsTruncated: concerts.length > 300, agreedFees: concerts.reduce((sum, concert) => sum + concert.feeAmount, 0), collectedFees: concerts.reduce((sum, concert) => sum + concert.feePaid, 0), merchRevenue: totalMerchRevenue(concerts, sales), movementsTruncated: movements.length > 500, movementIncome: movements.filter((item) => item.kind === 'ingres').reduce((sum, item) => sum + item.amount, 0), movementExpenses: movements.filter((item) => item.kind === 'despesa').reduce((sum, item) => sum + item.amount, 0), movements: movements.slice(0, 500).map(({ id, kind, amount, date, category, note, concertId }) => ({ id, kind, amount, date, category, note, concertId })) } })
+      const data = await invokeAssistant({ action: 'copilot', request, referenceDate: referenceDate(), concerts: context, labelAgreement, setlists: templates.map(({ id, name, songs, active }) => ({ id, name, songs, active })), people: people.map(({ id, name, kind, active }) => ({ id, name, kind, active })), materials: materials.map(({ id, name, category, active }) => ({ id, name, category, active })), documents: documents.map(({ id, name, url, archived, fileName }) => ({ id, name, url, archived, fileName })), products: products.map(({ id, name, price, stock, sizes, active }) => ({ id, name, price, stock, sizes, active })), sales: sales.slice(0, 300).map(({ id, concertId, productId, quantity, unitPrice, size }) => ({ id, concertId, productId, quantity, unitPrice, size })), workspaceName, theme: catalog.theme, analytics: { concertCount: concerts.length, concertsTruncated: concerts.length > 300, agreedFees: concerts.reduce((sum, concert) => sum + concert.feeAmount, 0), collectedFees: concerts.reduce((sum, concert) => sum + concert.feePaid, 0), netCollectedFees: totalNetConcertFees(concerts, labelAgreement), unclassifiedFees: concerts.filter((concert) => concertSettlement(concert, labelAgreement).unresolved && concert.feePaid > 0).length, merchRevenue: totalMerchRevenue(concerts, sales), movementsTruncated: movements.length > 500, movementIncome: movements.filter((item) => item.kind === 'ingres').reduce((sum, item) => sum + item.amount, 0), movementExpenses: movements.filter((item) => item.kind === 'despesa').reduce((sum, item) => sum + item.amount, 0), movements: movements.slice(0, 500).map(({ id, kind, amount, date, category, note, concertId }) => ({ id, kind, amount, date, category, note, concertId })) } })
       setLinkedCounts(new Map(concerts.map((concert) => [concert.id, sales.filter((sale) => sale.concertId === concert.id).length + movements.filter((movement) => movement.concertId === concert.id).length])))
-      setPlan(parsePlan(data.plan, concerts, templates, people, catalog))
+      setPlan(parsePlan(data.plan, concerts, templates, people, catalog, labelAgreement))
       if (typeof data.remainingToday === 'number') setRemainingToday(data.remainingToday)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut processar la petició.') }
     finally { setBusy(false) }
