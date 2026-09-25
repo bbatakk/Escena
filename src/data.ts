@@ -400,13 +400,15 @@ export async function syncOfflineData(): Promise<number> {
   return synced
 }
 
-export async function deleteConcert(id: string): Promise<void> {
+export async function deleteConcert(id: string, expectedUpdatedAt?: string): Promise<void> {
   if (!supabase) {
     localStorage.setItem(demoKey, JSON.stringify(localConcerts().filter((item) => item.id !== id)))
     return
   }
-  const { error } = await supabase.from('concerts').delete().eq('id', id)
+  const query = supabase.from('concerts').delete().eq('id', id)
+  const { data, error } = await (expectedUpdatedAt ? query.eq('updated_at', expectedUpdatedAt) : query).select('id').maybeSingle()
   if (error) throw error
+  if (!data) throw new Error('Aquest concert ha canviat o ja no existeix. Recarrega la llista abans d’eliminar-lo.')
 }
 
 export async function uploadConcertDocument(concert: Concert, documentId: string, file: File): Promise<Concert> {
