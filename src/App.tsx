@@ -1,10 +1,10 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
+  ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu,
   House, ListMusic, Music2, Navigation, PackageCheck, Paperclip, Pencil, Plus, Search, ShoppingBag, Sparkles, Ticket, Trash2,
-  Settings as SettingsIcon, UsersRound, Wallet, X,
+  Settings as SettingsIcon, UsersRound, Wallet, X, Maximize2,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
@@ -143,6 +143,29 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   return <div className="info-row"><span>{label}</span><strong>{children || '—'}</strong></div>
 }
 
+function StageSetlist({ title, songs, onClose }: { title: string; songs: string[]; onClose: () => void }) {
+  const [activeSong, setActiveSong] = useState(0)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+      if (event.key === 'ArrowDown' || event.key === 'ArrowRight') setActiveSong((current) => Math.min(current + 1, songs.length - 1))
+      if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') setActiveSong((current) => Math.max(current - 1, 0))
+    }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKeyDown)
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener('keydown', onKeyDown) }
+  }, [onClose, songs.length])
+
+  return <div className="stage-setlist" role="dialog" aria-modal="true" aria-label={`Setlist de ${title}`}>
+    <header className="stage-setlist-header"><div><span className="eyebrow">MODE ESCENARI</span><h2>{title}</h2><p>{songs.length} cançons · Fletxes per moure’t · Esc per sortir</p></div><button type="button" className="stage-close" onClick={onClose}><X size={20} /> Tancar</button></header>
+    <div className="stage-setlist-body">
+      <main className="stage-current-song"><span className="stage-song-number">{String(activeSong + 1).padStart(2, '0')} / {String(songs.length).padStart(2, '0')}</span><div className="stage-paper"><p>{songs[activeSong]}</p></div><div className="stage-navigation"><button type="button" className="stage-nav-button" disabled={activeSong === 0} onClick={() => setActiveSong((current) => Math.max(current - 1, 0))}><ChevronUp size={22} /> Anterior</button><button type="button" className="stage-nav-button stage-nav-next" disabled={activeSong === songs.length - 1} onClick={() => setActiveSong((current) => Math.min(current + 1, songs.length - 1))}>Següent <ChevronDown size={22} /></button></div></main>
+      <aside className="stage-song-list" aria-label="Cançons del setlist">{songs.map((song, index) => <button type="button" className={index === activeSong ? 'stage-song-active' : ''} key={`${song}-${index}`} onClick={() => setActiveSong(index)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{song}</strong></button>)}</aside>
+    </div>
+  </div>
+}
+
 function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, onUpload, onRemoveFile }: { concert: Concert; labelAgreement: LabelAgreement | null; onBack: () => void; onEdit: () => void; onDelete: () => void; onToggle: (id: string) => Promise<void>; onUpload: (id: string, file: File) => Promise<void>; onRemoveFile: (id: string) => Promise<void> }) {
   const [busyMaterial, setBusyMaterial] = useState(false)
   const [materialError, setMaterialError] = useState('')
@@ -156,6 +179,7 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
   const [undoingSaleIds, setUndoingSaleIds] = useState<string[]>([])
   const [saleError, setSaleError] = useState('')
   const [merchSearch, setMerchSearch] = useState('')
+  const [stageSetlistOpen, setStageSetlistOpen] = useState(false)
   const d = concert.details
   const settlement = concertSettlement(concert, labelAgreement)
   useEffect(() => {
@@ -212,7 +236,7 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
 
       <section className="detail-section"><div className="detail-section-heading"><PackageCheck size={19} /><h2>Material a portar</h2><span className="section-counter">{d.materials.filter((item) => item.loaded).length}/{d.materials.length} carregat</span></div>{d.materials.length ? <div className="material-list">{d.materials.map((item) => <label className={`material-item ${item.loaded ? 'is-loaded' : ''}`} key={item.id}><input type="checkbox" checked={item.loaded} disabled={busyMaterial} onChange={() => void toggleMaterial(item.id)} /><span className="check-visual"><Check size={14} /></span>{item.name || 'Material sense nom'}</label>)}</div> : <p className="section-empty">Afegeix material a la fitxa per preparar la càrrega.</p>}{materialError ? <p className="form-error" role="alert">{materialError}</p> : null}</section>
 
-       <section className="detail-section"><div className="detail-section-heading"><Music2 size={19} /><h2>Actuació</h2></div>{d.setlist ? <div className="setlist">{d.setlist.split('\n').filter(Boolean).map((song, index) => <div key={index}><span>{String(index + 1).padStart(2, '0')}</span>{song}</div>)}</div> : <p className="section-empty">Encara no hi ha setlist.</p>}{d.passes ? <div className="info-rows subsection-rows"><InfoRow label="Invitacions i passis">{d.passes}</InfoRow></div> : null}</section>
+        <section className="detail-section"><div className="detail-section-heading"><Music2 size={19} /><h2>Actuació</h2>{d.setlist ? <button type="button" className="setlist-stage-button" onClick={() => setStageSetlistOpen(true)}><Maximize2 size={15} /> Mode escenari</button> : null}</div>{d.setlist ? <div className="setlist">{d.setlist.split('\n').filter(Boolean).map((song, index) => <div key={index}><span>{String(index + 1).padStart(2, '0')}</span>{song}</div>)}</div> : <p className="section-empty">Encara no hi ha setlist.</p>}{d.passes ? <div className="info-rows subsection-rows"><InfoRow label="Invitacions i passis">{d.passes}</InfoRow></div> : null}</section>
        <section className="detail-section merch-quick-sale">
          <div className="detail-section-heading quick-sale-heading"><span className="quick-sale-heading-icon"><ShoppingBag size={19} /></span><div><h2>Venda ràpida</h2><p>Un toc per cada producte venut.</p></div><div className="quick-sale-total"><strong>{formatMoney(concertSales.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0))}</strong><small>{concertSales.reduce((sum, item) => sum + item.quantity, 0)} unitats</small></div></div>
          {merchProducts.length ? <label className="quick-sale-search"><Search size={16} /><input type="search" value={merchSearch} onChange={(event) => setMerchSearch(event.target.value)} placeholder="Cerca producte o talla…" /><span>{visibleMerchProducts.length} productes</span></label> : null}
@@ -220,13 +244,13 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
          {saleError ? <p className="form-error" role="alert">{saleError}</p> : null}
          {concertSales.length ? <div className="quick-sale-history"><div className="quick-sale-history-heading"><strong>Últimes vendes</strong><span>{concertSales.length}</span></div>{concertSales.slice(0, 6).map((sale) => <div className="quick-sale-history-row" key={sale.id}><span className="quick-sale-history-quantity">{sale.quantity}×</span><span className="quick-sale-history-name">{merchProducts.find((item) => item.id === sale.productId)?.name || 'Producte eliminat'}{sale.size ? ` · ${sale.size}` : ''}</span><strong>{formatMoney(sale.quantity * sale.unitPrice)}</strong><button type="button" className="text-button" disabled={undoingSaleIds.includes(sale.id)} onClick={() => void undoSale(sale)}>{undoingSaleIds.includes(sale.id) ? '…' : 'Desfer'}</button></div>)}</div> : null}
        </section>
-    </div><aside className="detail-aside">
+     </div><aside className="detail-aside">
       <section className="aside-card"><div className="aside-heading"><Navigation size={18} /><h3>Ubicació</h3></div><strong>{concert.venue || 'Lloc per concretar'}</strong>{concert.address ? <a className="address-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(concert.address)}`} target="_blank" rel="noreferrer">{concert.address} <ExternalLink size={14} /></a> : <p>Encara no hi ha adreça</p>}{concert.city || concert.country ? <p>{[concert.city, concert.country].filter(Boolean).join(', ')}</p> : null}</section>
       <section className="aside-card"><div className="aside-heading"><UsersRound size={18} /><h3>Persones</h3></div>{d.contactName ? <><span className="aside-label">CONTACTE RESPONSABLE</span><strong>{d.contactName}</strong>{d.contactPhone ? <a href={`tel:${d.contactPhone}`} className="aside-contact">{d.contactPhone}</a> : null}{d.contactEmail ? <a href={`mailto:${d.contactEmail}`} className="aside-contact">{d.contactEmail}</a> : null}</> : null}{d.personIds.length ? <div className="selected-people">{d.personIds.map((id) => <span key={id}>{people.find((person) => person.id === id)?.name || 'Persona eliminada'}</span>)}</div> : null}{!d.contactName && !d.personIds.length ? <p>Encara no hi ha contacte.</p> : null}{d.team ? <><span className="aside-label team-label">NOTES D’EQUIP</span><p>{d.team}</p></> : null}</section>
       <section className="aside-card"><div className="aside-heading"><Ticket size={18} /><h3>Hospitalitat</h3></div><InfoRow label="Sopar">{d.dinner === 'si' ? 'Sí' : d.dinner === 'no' ? 'No' : 'Encara no se sap'}</InfoRow><InfoRow label="Allotjament">{d.lodging === 'si' ? d.lodgingDetails || 'Sí' : d.lodging === 'no' ? 'No cal' : 'Encara no se sap'}</InfoRow>{d.lodgingAddress ? <a className="inline-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.lodgingAddress)}`} target="_blank" rel="noreferrer">{d.lodgingAddress} <ExternalLink size={14} /></a> : null}</section>
        <section className="aside-card"><div className="aside-heading"><Wallet size={18} /><h3>Tancament</h3></div>{concertSales.length ? <InfoRow label="Marxandatge">{formatMoney(concertMerchRevenue)}</InfoRow> : d.merchSales > 0 ? <InfoRow label="Vendes antigues (resum)">{formatMoney(d.merchSales)}</InfoRow> : <InfoRow label="Marxandatge">{formatMoney(0)}</InfoRow>}<InfoRow label="Despeses">{formatMoney(d.expenses)}</InfoRow>{d.notes ? <p className="closing-notes">{d.notes}</p> : null}</section>
       <button type="button" className="delete-link" onClick={onDelete}><Trash2 size={15} /> Eliminar concert</button>
-    </aside></div>
+     </aside></div>{stageSetlistOpen ? <StageSetlist title={concert.title} songs={d.setlist.split('\n').filter(Boolean)} onClose={() => setStageSetlistOpen(false)} /> : null}
   </div>
 }
 
