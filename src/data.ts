@@ -152,7 +152,7 @@ export async function saveBandName(value: string): Promise<string> {
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
 
 export function importLocalBackup(backup: AppBackup): void {
-  localStorage.setItem(demoKey, JSON.stringify(backup.concerts))
+  localStorage.setItem(demoKey, JSON.stringify(backup.concerts.map(normalizeConcert)))
   localStorage.setItem(libraryKey, JSON.stringify(backup.library))
   localStorage.setItem(moneyKey, JSON.stringify(backup.money))
   localStorage.setItem(merchProductsKey, JSON.stringify(backup.merchProducts))
@@ -175,9 +175,9 @@ export async function importBackup(backup: AppBackup): Promise<void> {
   const ownPath = (path?: string) => path?.startsWith(`${currentBandId}/`) ? path : undefined
 
   for (const concert of backup.concerts) {
-const safeConcert: Concert = {
+    const safeConcert: Concert = {
       ...concert,
-      country: concert.country || '',
+      country: typeof concert.country === 'string' ? concert.country : '',
       updatedAt: concertVersions.get(concert.id),
       details: {
         ...concert.details,
@@ -209,6 +209,11 @@ function offline(): boolean { return typeof navigator !== 'undefined' && !naviga
 function readCache<T>(key: string): T[] { try { return JSON.parse(localStorage.getItem(key) || '[]') as T[] } catch { return [] } }
 function writeCache<T>(key: string, value: T[]): void { localStorage.setItem(key, JSON.stringify(value)) }
 export function activeResources<T extends { active: boolean }>(items: T[]): T[] { return items.filter((item) => item.active) }
+
+function normalizeConcert(concert: Concert): Concert {
+  return { ...concert, country: typeof concert.country === 'string' ? concert.country : '' }
+}
+
 function queueData(entity: 'money' | 'product' | 'sale', action: 'save' | 'delete', payload: unknown): void {
   const queue = readCache<{ id: string; entity: string; action: string; payload: unknown }>(offlineDataQueueKey)
   const id = typeof payload === 'string' ? payload : (payload as { id: string }).id
@@ -293,7 +298,7 @@ function localConcerts(): Concert[] {
   const saved = localStorage.getItem(demoKey)
   if (!saved) return demoConcerts()
   try {
-    return JSON.parse(saved) as Concert[]
+    return (JSON.parse(saved) as Concert[]).map(normalizeConcert)
   } catch {
     return demoConcerts()
   }
@@ -309,12 +314,13 @@ export async function listConcerts(): Promise<Concert[]> {
     return concerts
   } catch (error) {
     const cached = localStorage.getItem(offlineConcertsKey)
-    if (cached) return JSON.parse(cached) as Concert[]
+    if (cached) return (JSON.parse(cached) as Concert[]).map(normalizeConcert)
     throw error
   }
 }
 
 export async function saveConcert(concert: Concert): Promise<Concert> {
+  concert = normalizeConcert(concert)
   if (!supabase) {
     const next = localConcerts().filter((item) => item.id !== concert.id)
     const saved = { ...concert, updatedAt: new Date().toISOString() }
