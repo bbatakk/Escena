@@ -8,8 +8,8 @@ import {
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
-import { cloudConfigured, deleteConcert, deleteMerchSale, getBandProfile, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
-import { createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type MerchProduct, type MerchSale } from './model'
+import { cloudConfigured, deleteConcert, deleteMerchSale, getBandProfile, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
+import { createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type MerchProduct, type MerchSale, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
@@ -312,7 +312,7 @@ export default function App() {
   function navigate(to: Screen) { setScreen(to); setSelectedId(null); setMenuOpen(false); window.scrollTo(0, 0) }
   function startForm(initial: Concert, returnTo: Screen = screen) { setFormInitial(initial); setFormReturnScreen(returnTo); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
   function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert, 'calendar') }
-  async function save(item: Concert) {
+  async function save(item: Concert, navigateAfterSave = true) {
     const saved = await saveConcert(item)
     const previous = concerts.find((existing) => existing.id === saved.id)
     const retained = new Set(saved.details.documents.map((doc) => doc.storagePath))
@@ -320,8 +320,9 @@ export default function App() {
       if (doc.storagePath && isConcertOwnedFile(saved, doc.storagePath) && !retained.has(doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
     }
     setConcerts((prev) => [...prev.filter((existing) => existing.id !== saved.id), saved])
-    open(saved.id)
+    if (navigateAfterSave) open(saved.id)
   }
+  async function createAssistantSetlist(template: SetlistTemplate) { await saveResource('setlist_templates', template) }
   async function remove() {
     if (!selected || !window.confirm(`Vols eliminar «${selected.title}»? Aquesta acció no es pot desfer.`)) return
     try { await deleteConcert(selected.id); for (const doc of selected.details.documents) { if (doc.storagePath && isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
@@ -365,7 +366,7 @@ export default function App() {
          {screen === 'materials' ? <Suspense fallback={<div className="content-loading">Carregant material…</div>}><BandMaterials /></Suspense> : null}
          {screen === 'setlists' ? <Suspense fallback={<div className="content-loading">Carregant setlists…</div>}><Setlists /></Suspense> : null}
          {screen === 'settings' ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} /> : null}
-         {screen === 'assistant' ? <ConcertAssistant concerts={concerts} onCreateDraft={(draft) => startForm(draft)} /> : null}
+         {screen === 'assistant' ? <ConcertAssistant concerts={concerts} onCreateDraft={(draft) => startForm(draft)} onUpdateConcert={(concert) => save(concert, false)} onCreateSetlist={createAssistantSetlist} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}
          {!loading && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate(formReturnScreen)} /> : null}
          {!loading && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
