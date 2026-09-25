@@ -153,7 +153,7 @@ function StageSetlist({ title, songs, onClose }: { title: string; songs: string[
   }, [onClose])
 
   return <div className="stage-setlist" role="dialog" aria-modal="true" aria-label={`Setlist de ${title}`}>
-    <header className="stage-setlist-header"><div><span className="eyebrow">MODE ESCENARI</span><h2>{title}</h2><p>{songs.length} cançons · Llista completa · Esc per sortir</p></div><button type="button" className="stage-close" onClick={onClose}><X size={20} /> Tancar</button></header>
+    <header className="stage-setlist-header"><div><span className="eyebrow">MODE ESCENARI</span><p>{songs.length} cançons · Llista completa · Esc per sortir</p></div><button type="button" className="stage-close" onClick={onClose}><X size={20} /> Tancar</button></header>
     <div className="stage-setlist-body"><div className="stage-paper stage-paper-list" aria-label="Setlist complet">{songs.map((song, index) => <div className="stage-list-song" key={`${song}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><p>{song}</p></div>)}</div></div>
   </div>
 }
