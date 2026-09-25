@@ -71,7 +71,7 @@ function ConcertCard({ concert, onOpen }: { concert: Concert; onOpen: () => void
   const monthLabel = concert.date ? new Intl.DateTimeFormat('ca-ES', { month: 'short' }).format(new Date(Number(year), Number(month) - 1, Number(day))).replace('.', '') : ''
   return <button type="button" className="concert-card" onClick={onOpen}>
     <div className="date-stamp"><strong>{day || '–'}</strong><span>{monthLabel}</span></div>
-    <div className="concert-card-info"><div className="card-topline"><span className={`status status-${concert.status}`}>{statusLabels[concert.status]}</span>{pending.length ? <span className="pending-count"><span className="small-dot" />{pending.length} {pending.length === 1 ? 'pendent' : 'pendents'}</span> : null}</div><h3>{concert.title}</h3><p><MapPin size={14} /> {concertPlace(concert) || 'Ubicació per concretar'}</p></div><ArrowRight size={19} className="card-arrow" />
+    <div className="concert-card-info"><div className="card-topline"><span className={`status status-${concert.status}`}>{statusLabels[concert.status]}</span>{pending.length ? <span className="pending-count"><span className="small-dot" />{pending.length} {pending.length === 1 ? 'pendent' : 'pendents'}</span> : null}</div><h3>{concert.title}</h3><p><MapPin size={14} /><span>{concertPlace(concert) || 'Ubicació per concretar'}</span></p></div><ArrowRight size={19} className="card-arrow" />
   </button>
 }
 

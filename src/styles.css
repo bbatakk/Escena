@@ -103,6 +103,7 @@
   .concert-card h3{overflow-wrap:anywhere}
   .concert-card-info>p{align-items:flex-start;overflow-wrap:anywhere}
   .concert-card-info>p svg{flex:none;margin-top:1px}
+  .concert-card-info>p span{min-width:0;overflow-wrap:anywhere;white-space:normal}
   .overview-next{min-width:0}
   .calendar-head{padding:15px 14px}
   .calendar-head h2{font-size:16px}
