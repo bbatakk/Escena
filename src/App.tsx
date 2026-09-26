@@ -19,6 +19,7 @@ const BandPeople = lazy(() => import('./BandPeople'))
 const BandMaterials = lazy(() => import('./BandMaterials'))
 const Setlists = lazy(() => import('./Setlists'))
 type Screen = 'home' | 'list' | 'calendar' | 'detail' | 'form' | 'assistant' | 'library' | 'treasury' | 'merch' | 'people' | 'materials' | 'setlists' | 'settings'
+interface AppHistoryState { escena: true; screen: Screen; selectedId?: string; formInitial?: Concert }
 
 function safeLink(value: string): string | null {
   try {
@@ -287,7 +288,6 @@ export default function App() {
   const [workspaceProfileLoading, setWorkspaceProfileLoading] = useState(() => cloudConfigured && (!initialWorkspaceProfile.name || !initialWorkspaceProfile.logoUrl))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [formInitial, setFormInitial] = useState<Concert | null>(null)
-  const [formReturnScreen, setFormReturnScreen] = useState<Screen>('list')
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [search, setSearch] = useState('')
   const [concertYear, setConcertYear] = useState('tots')
@@ -317,6 +317,21 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true) }).catch(() => { setSession(null); setAuthReady(true) })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => setSession(current))
     return () => listener.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    window.history.replaceState({ escena: true, screen: 'home' } satisfies AppHistoryState, '')
+    const restore = (event: PopStateEvent) => {
+      const state = event.state as AppHistoryState | null
+      if (!state?.escena) return
+      setScreen(state.screen)
+      setSelectedId(state.selectedId || null)
+      setFormInitial(state.formInitial || null)
+      setMenuOpen(false)
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
   }, [])
 
   useEffect(() => {
@@ -357,10 +372,10 @@ export default function App() {
   const next = sorted.find((item) => item.date >= todayString && item.status !== 'cancel·lat')
   const totalPending = concerts.reduce((sum, item) => sum + getPending(item).length, 0)
 
-  function open(id: string) { setSelectedId(id); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
-  function navigate(to: Screen) { setScreen(to); setSelectedId(null); setMenuOpen(false); window.scrollTo(0, 0) }
-  function startForm(initial: Concert, returnTo: Screen = screen) { setFormInitial(initial); setFormReturnScreen(returnTo); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
-  function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert, 'calendar') }
+  function open(id: string, replace = false) { const state: AppHistoryState = { escena: true, screen: 'detail', selectedId: id }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setSelectedId(id); setFormInitial(null); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
+  function navigate(to: Screen, replace = false) { if (!replace && screen === to && !selectedId) { setMenuOpen(false); return }; const state: AppHistoryState = { escena: true, screen: to }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setScreen(to); setSelectedId(null); setFormInitial(null); setMenuOpen(false); window.scrollTo(0, 0) }
+  function startForm(initial: Concert) { const state: AppHistoryState = { escena: true, screen: 'form', formInitial: initial }; window.history.pushState(state, ''); setFormInitial(initial); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
+  function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert) }
   async function save(item: Concert, navigateAfterSave = true) {
     const saved = await saveConcert(item)
     const previous = concerts.find((existing) => existing.id === saved.id)
@@ -369,7 +384,10 @@ export default function App() {
       if (doc.storagePath && isConcertOwnedFile(saved, doc.storagePath) && !retained.has(doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
     }
     setConcerts((prev) => [...prev.filter((existing) => existing.id !== saved.id), saved])
-    if (navigateAfterSave) open(saved.id)
+    if (navigateAfterSave) {
+      if (formInitial?.id === saved.id && formInitial.updatedAt) window.history.back()
+      else open(saved.id, true)
+    }
   }
   async function createAssistantSetlist(template: SetlistTemplate) { await saveResource('setlist_templates', template) }
   async function createAssistantPerson(person: BandPerson) { await saveResource('band_people', person) }
@@ -383,7 +401,7 @@ export default function App() {
   }
   async function remove() {
     if (!selected || !window.confirm(`Vols eliminar «${selected.title}»? Aquesta acció no es pot desfer.`)) return
-    try { await deleteConcert(selected.id); for (const doc of selected.details.documents) { if (doc.storagePath && isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list') } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
+    try { await deleteConcert(selected.id); for (const doc of selected.details.documents) { if (doc.storagePath && isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list', true) } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
   }
   async function toggleMaterial(id: string) {
     if (!selected) return
@@ -427,12 +445,12 @@ export default function App() {
           {screen === 'settings' && labelReady ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} labelAgreement={labelAgreement} onLabelChange={setLabelAgreement} /> : null}
            {screen === 'assistant' && labelReady ? <ConcertAssistant concerts={concerts} workspaceName={workspaceName} labelAgreement={labelAgreement} onWorkspaceNameChange={setWorkspaceName} onThemeChange={(value) => { setTheme(value); document.documentElement.dataset.theme = value }} onCreateDraft={(draft) => startForm(draft)} onUpdateConcert={(concert) => save(concert, false)} onSaveSetlist={createAssistantSetlist} onDeleteConcert={deleteAssistantConcert} onSavePerson={createAssistantPerson} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}
-          {!loading && labelReady && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} labelAgreement={labelAgreement} onSave={save} onCancel={() => formInitial.title ? open(formInitial.id) : navigate(formReturnScreen)} /> : null}
-          {!loading && labelReady && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} labelAgreement={labelAgreement} onBack={() => navigate('list')} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
+          {!loading && labelReady && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} labelAgreement={labelAgreement} onSave={save} onCancel={() => window.history.back()} /> : null}
+           {!loading && labelReady && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} labelAgreement={labelAgreement} onBack={() => window.history.back()} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
           <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>
           <div className="overview-strip"><div className="overview-next"><div className="overview-icon"><Music2 size={22} /></div><div><span className="eyebrow">PROPER CONCERT</span><strong>{next ? next.title : 'Encara no hi ha cap data'}</strong><small>{next ? `${formatDate(next.date)} · ${concertPlace(next) || 'Lloc per concretar'}` : 'Afegeix un concert per començar'}</small></div>{next ? <button aria-label={`Obrir ${next.title}`} onClick={() => open(next.id)} className="overview-arrow"><ArrowRight size={19} /></button> : null}</div><div className="overview-stat"><span className="eyebrow">PER RESOLDRE</span><strong>{totalPending.toString().padStart(2, '0')}</strong><small>{totalPending === 1 ? 'qüestió pendent' : 'qüestions pendents'}</small></div></div>
-           <div className="listing-header"><div className="view-tabs"><button className={screen === 'list' ? 'active-tab' : ''} onClick={() => setScreen('list')}><List size={17} /> Llista</button><button className={screen === 'calendar' ? 'active-tab' : ''} onClick={() => setScreen('calendar')}><CalendarDays size={17} /> Calendari</button></div>{screen === 'list' ? <div className="concert-list-filters"><label className="year-filter"><span className="sr-only">Filtrar concerts per any</span><select value={concertYear} onChange={(event) => setConcertYear(event.target.value)}><option value="tots">Tots els anys</option>{concertYears.map((year) => <option key={year} value={year}>{year === 'sense-data' ? 'Sense data' : year}</option>)}</select></label><label className="search-box"><Search size={18} /><span className="sr-only">Cerca concerts</span><input type="search" placeholder="Cerca concerts..." value={search} onChange={(e) => setSearch(e.target.value)} /></label></div> : null}</div>
+           <div className="listing-header"><div className="view-tabs"><button className={screen === 'list' ? 'active-tab' : ''} onClick={() => navigate('list')}><List size={17} /> Llista</button><button className={screen === 'calendar' ? 'active-tab' : ''} onClick={() => navigate('calendar')}><CalendarDays size={17} /> Calendari</button></div>{screen === 'list' ? <div className="concert-list-filters"><label className="year-filter"><span className="sr-only">Filtrar concerts per any</span><select value={concertYear} onChange={(event) => setConcertYear(event.target.value)}><option value="tots">Tots els anys</option>{concertYears.map((year) => <option key={year} value={year}>{year === 'sense-data' ? 'Sense data' : year}</option>)}</select></label><label className="search-box"><Search size={18} /><span className="sr-only">Cerca concerts</span><input type="search" placeholder="Cerca concerts..." value={search} onChange={(e) => setSearch(e.target.value)} /></label></div> : null}</div>
             {screen === 'calendar' ? <CalendarView concerts={concerts} onOpen={open} onCreate={startFormOnDate} month={month} setMonth={setMonth} /> : <div className="concert-list"><div className="list-label"><span>PROPERS CONCERTS</span><span>{upcoming.length} {upcoming.length === 1 ? 'concert' : 'concerts'}</span></div>{upcoming.length ? upcomingByYear.map(([year, items]) => <ConcertYearGroup key={year} year={year} concerts={items} onOpen={open} />) : <div className="empty-list"><CalendarDays size={25} /><h3>{search || concertYear !== 'tots' ? 'Cap resultat' : 'Encara no hi ha concerts propers'}</h3><p>{search || concertYear !== 'tots' ? 'Prova una altra cerca o any.' : 'Crea un concert i comença a reunir tota la informació.'}</p></div>}{other.length ? <><div className="list-label past-label"><span>ANTERIORS I CANCEL·LATS</span><span>{other.length}</span></div>{pastByYear.map(([year, items]) => <ConcertYearGroup key={year} year={year} concerts={items} onOpen={open} collapsible={year !== String(today.getFullYear()) && year !== 'sense-data'} />)}</> : null}</div>}
         </> : null}
       </div><footer className="app-footer"><span>Escena · Els concerts, clars.</span><span>Fet per al camí <ArrowRight size={14} /></span></footer>
