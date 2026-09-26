@@ -9,7 +9,7 @@ import {
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
 import { cloudConfigured, deleteConcert, deleteMerchSale, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
-import { concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type SetlistTemplate } from './model'
+import { concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, shouldMarkConcertRealized, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
@@ -63,6 +63,19 @@ function AuthScreen() {
 
 function concertPlace(concert: { venue: string; city: string; country: string }): string {
   return [concert.venue, concert.city, concert.country].filter(Boolean).join(' · ')
+}
+
+function localDateString(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+async function markPastConcertsRealized(concerts: Concert[]): Promise<Concert[]> {
+  const today = localDateString()
+  return Promise.all(concerts.map(async (concert) => {
+    if (!shouldMarkConcertRealized(concert, today)) return concert
+    const realized: Concert = { ...concert, status: 'realitzat' }
+    try { return await saveConcert(realized) } catch { return realized }
+  }))
 }
 
 function ConcertCard({ concert, onOpen }: { concert: Concert; onOpen: () => void }) {
@@ -315,12 +328,12 @@ export default function App() {
     let alive = true
     setLoading(true)
     if (cloudConfigured) setConcerts([])
-    listConcerts().then((data) => { if (alive) { setConcerts(data); setError('') } }).catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els concerts.') }).finally(() => { if (alive) setLoading(false) })
+    listConcerts().then(markPastConcertsRealized).then((data) => { if (alive) { setConcerts(data); setError('') } }).catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els concerts.') }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [authReady, session?.user.id])
 
   useEffect(() => {
-    const becameOnline = () => { setOnline(true); void Promise.all([syncOfflineConcerts(), syncOfflineData()]).then(() => { if (cloudConfigured && session) void listConcerts().then(setConcerts).catch(() => {}) }) }
+    const becameOnline = () => { setOnline(true); void Promise.all([syncOfflineConcerts(), syncOfflineData()]).then(() => { if (cloudConfigured && session) void listConcerts().then(markPastConcertsRealized).then(setConcerts).catch(() => {}) }) }
     const becameOffline = () => setOnline(false)
     window.addEventListener('online', becameOnline)
     window.addEventListener('offline', becameOffline)

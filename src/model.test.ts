@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commissionRate, concertSettlement, getPending, merchRevenueByConcert, newConcert, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
+import { commissionRate, concertSettlement, getPending, merchRevenueByConcert, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
 
 describe('discogràfica i liquidació del catxet', () => {
   const agreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }, { above: 1000, percent: 20 }] }
@@ -84,6 +84,28 @@ describe('pendents derivats de la fitxa', () => {
     expect(getPending(concert)).toEqual(['Concretar l’allotjament'])
     concert.details.lodgingAddress = 'Hotel Central, Carrer Major 1'
     expect(getPending(concert)).toEqual([])
+  })
+})
+
+describe('estat automàtic del concert', () => {
+  it('marca només concerts anteriors a avui que encara no han acabat', () => {
+    const concert = newConcert()
+    concert.date = '2026-09-26'
+    concert.status = 'confirmat'
+    expect(shouldMarkConcertRealized(concert, '2026-09-27')).toBe(true)
+    concert.date = '2026-09-27'
+    expect(shouldMarkConcertRealized(concert, '2026-09-27')).toBe(false)
+    concert.date = '2026-09-28'
+    expect(shouldMarkConcertRealized(concert, '2026-09-27')).toBe(false)
+  })
+
+  it('respecta els concerts cancel·lats i els que ja estan realitzats', () => {
+    const concert = newConcert()
+    concert.date = '2026-09-26'
+    concert.status = 'cancel·lat'
+    expect(shouldMarkConcertRealized(concert, '2026-09-27')).toBe(false)
+    concert.status = 'realitzat'
+    expect(shouldMarkConcertRealized(concert, '2026-09-27')).toBe(false)
   })
 })
 

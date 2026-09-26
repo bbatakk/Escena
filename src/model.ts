@@ -181,6 +181,10 @@ export const statusLabels: Record<ConcertStatus, string> = {
   'cancel·lat': 'Cancel·lat',
 }
 
+export function shouldMarkConcertRealized(concert: Concert, today: string): boolean {
+  return Boolean(concert.date) && concert.date < today && concert.status !== 'realitzat' && concert.status !== 'cancel·lat'
+}
+
 export function emptyDetails(): ConcertDetails {
   return {
     management: 'pendent',
