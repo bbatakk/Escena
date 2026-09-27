@@ -458,8 +458,7 @@ export default function App() {
     }
     setConcerts((prev) => [...prev.filter((existing) => existing.id !== saved.id), saved])
     if (navigateAfterSave) {
-      if (formInitial?.id === saved.id && formInitial.updatedAt) window.history.back()
-      else open(saved.id, true)
+      open(saved.id, true)
     }
   }
   async function createAssistantSetlist(template: SetlistTemplate) { await saveResource('setlist_templates', template) }
