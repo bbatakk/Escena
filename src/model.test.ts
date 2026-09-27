@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commissionRate, concertClosingSummary, concertSettlement, generatedTreasuryMovements, getPending, merchRevenueByConcert, moneyMovementBalance, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement, type MoneyMovement } from './model'
+import { commissionRate, concertClosingSummary, concertSettlement, generatedTreasuryMovements, getPending, merchRevenueByConcert, moneyMovementBalance, newConcert, posterConcerts, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement, type MoneyMovement } from './model'
 
 describe('discogràfica i liquidació del catxet', () => {
   const agreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }, { above: 1000, percent: 20 }] }
@@ -150,6 +150,21 @@ describe('tancament econòmic del concert', () => {
     concert.details.merchSales = 42
     concert.details.expenses = 18
     expect(concertClosingSummary(concert, null, [], [])).toMatchObject({ merchRevenue: 42, usesDetailedSales: false, legacyExpenses: 18, balance: 24 })
+  })
+})
+
+describe('cartell de gira', () => {
+  it('publica només concerts confirmats i protegeix els que encara no es poden anunciar', () => {
+    const hidden = newConcert(); hidden.id = 'hidden'; hidden.date = '2026-10-04'; hidden.status = 'confirmat'; hidden.title = 'Secret'; hidden.city = 'Girona'; hidden.venue = 'Sala secreta'
+    const publicGig = newConcert(); publicGig.id = 'public'; publicGig.date = '2026-10-06'; publicGig.status = 'confirmat'; publicGig.details.announceable = true; publicGig.title = 'Festa'; publicGig.city = 'Reus'
+    const past = newConcert(); past.id = 'past'; past.date = '2026-09-01'; past.status = 'realitzat'; past.details.announceable = true
+    const unconfirmed = newConcert(); unconfirmed.status = 'reservat'; unconfirmed.date = '2026-10-05'
+    const cancelled = newConcert(); cancelled.status = 'cancel·lat'; cancelled.date = '2026-10-05'
+    const result = posterConcerts([publicGig, cancelled, hidden, unconfirmed, past], '2026-10-05')
+    expect(result.map((item) => item.id)).toEqual(['past', 'hidden', 'public'])
+    expect(result[1]).toEqual({ id: 'hidden', date: '2026-10-04', title: 'Per anunciar', city: '', venue: '', hidden: true, past: true })
+    expect(result[2]).toMatchObject({ title: 'Festa', city: 'Reus', past: false })
+    expect(JSON.stringify(result)).not.toContain('Sala secreta')
   })
 })
 

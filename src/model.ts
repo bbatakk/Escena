@@ -145,6 +145,7 @@ export interface BandMaterial { id: string; name: string; category: string; acti
 export interface SetlistTemplate { id: string; name: string; songs: string[]; active: boolean }
 
 export interface ConcertDetails {
+  announceable?: boolean
   management?: ConcertManager
   labelAgreement?: LabelAgreement
   conditions: string
@@ -188,6 +189,16 @@ export interface Concert {
   feeAmount: number
   feePaid: number
   details: ConcertDetails
+}
+
+export interface PosterConcert { id: string; date: string; title: string; city: string; venue: string; hidden: boolean; past: boolean }
+
+export function posterConcerts(concerts: Concert[], today: string): PosterConcert[] {
+  return concerts.filter((concert) => (concert.status === 'confirmat' || concert.status === 'realitzat') && /^\d{4}-\d{2}-\d{2}$/.test(concert.date))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    .map((concert) => concert.details.announceable === true
+      ? { id: concert.id, date: concert.date, title: concert.title, city: concert.city, venue: concert.venue, hidden: false, past: concert.date < today }
+      : { id: concert.id, date: concert.date, title: 'Per anunciar', city: '', venue: '', hidden: true, past: concert.date < today })
 }
 
 export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgreement | null, sales: MerchSale[], today = new Date().toISOString().slice(0, 10)): MoneyMovement[] {

@@ -29,6 +29,8 @@ describe('validació de backups', () => {
   it('valida l’estructura dels concerts abans de mostrar-ne la previsualització', () => {
     const concert = { ...newConcert(), date: '2026-10-05' }
     expect(validateBackup({ ...emptyBackup, concerts: [concert] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, concerts: [{ ...concert, details: { ...concert.details, announceable: true } }] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, concerts: [{ ...concert, details: { ...concert.details, announceable: 'sí' } }] })).toBe(false)
     expect(validateBackup({ ...emptyBackup, concerts: [{ ...concert, details: { ...concert.details, documents: [{ id: 'doc', name: 'Rider', url: '', direction: 'executar', status: 'pendent' }] } }] })).toBe(false)
   })
 
