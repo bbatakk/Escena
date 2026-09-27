@@ -341,7 +341,21 @@ async function syncLocalConcertIncome(concert: Concert, currentLabel?: LabelAgre
   writeLocalGeneratedMovement('concert_fee', concert.id, !settlement.unresolved && settlement.netPaid > 0 ? {
     concertId: concert.id, kind: 'ingres', amount: settlement.netPaid, date: localToday(), category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
   } : null)
+  syncLocalConcertExpense(concert)
   await syncLocalMerchTotalMovement()
+}
+
+function syncLocalConcertExpense(concert: Concert): void {
+  const hasManualExpense = readCache<MoneyMovement>(moneyKey).some((movement) => movement.concertId === concert.id && movement.kind === 'despesa' && !movement.sourceType)
+  writeLocalGeneratedMovement('concert_expense', concert.id, !hasManualExpense && concert.details.expenses > 0 ? {
+    concertId: concert.id, kind: 'despesa', amount: concert.details.expenses, date: localToday(), category: 'Despeses del concert', note: `Generat automàticament · ${concert.title}`,
+  } : null)
+}
+
+async function syncLocalConcertExpenseById(id?: string): Promise<void> {
+  if (!id) return
+  const concert = (await listConcerts()).find((item) => item.id === id)
+  if (concert) syncLocalConcertExpense(concert)
 }
 
 async function syncLocalMerchTotalMovement(): Promise<void> {
@@ -872,9 +886,10 @@ export async function saveMoneyMovement(movement: MoneyMovement): Promise<MoneyM
   if (!supabase) {
     const all = await listMoneyMovements()
     localStorage.setItem(moneyKey, JSON.stringify([movement, ...all.filter((item) => item.id !== movement.id)]))
+    if (movement.kind === 'despesa') await syncLocalConcertExpenseById(movement.concertId)
     return movement
   }
-  if (offline()) { const all = readCache<MoneyMovement>(moneyKey); const previous = all.find((item) => item.id === movement.id) ?? null; const saved = { ...movement }; writeCache(moneyKey, [saved, ...all.filter((item) => item.id !== saved.id)]); queueData('money', 'save', saved, previous, true); return saved }
+  if (offline()) { const all = readCache<MoneyMovement>(moneyKey); const previous = all.find((item) => item.id === movement.id) ?? null; const saved = { ...movement }; writeCache(moneyKey, [saved, ...all.filter((item) => item.id !== saved.id)]); queueData('money', 'save', saved, previous, true); if (previous?.kind === 'despesa') await syncLocalConcertExpenseById(previous.concertId); if (saved.kind === 'despesa') await syncLocalConcertExpenseById(saved.concertId); return saved }
   const { data: currentMovement, error: currentMovementError } = await supabase.from('money_movements').select('source_type').eq('id', movement.id).maybeSingle()
   if (currentMovementError && !missingAutomaticMovementColumns(currentMovementError)) throw currentMovementError
   if (currentMovement?.source_type) throw new Error('Els moviments automàtics no es poden editar manualment.')
@@ -892,9 +907,11 @@ export async function deleteMoneyMovement(id: string): Promise<void> {
     const all = await listMoneyMovements()
     if (all.find((item) => item.id === id)?.sourceType) throw new Error('Els moviments automàtics no es poden eliminar manualment.')
     localStorage.setItem(moneyKey, JSON.stringify(all.filter((item) => item.id !== id)))
+    const removed = all.find((item) => item.id === id)
+    if (removed?.kind === 'despesa') await syncLocalConcertExpenseById(removed.concertId)
     return
   }
-  if (offline()) { const all = readCache<MoneyMovement>(moneyKey); if (all.find((item) => item.id === id)?.sourceType) throw new Error('Els moviments automàtics no es poden eliminar manualment.'); const previous = all.find((item) => item.id === id) ?? null; writeCache(moneyKey, all.filter((item) => item.id !== id)); queueData('money', 'delete', id, previous, true); return }
+  if (offline()) { const all = readCache<MoneyMovement>(moneyKey); if (all.find((item) => item.id === id)?.sourceType) throw new Error('Els moviments automàtics no es poden eliminar manualment.'); const previous = all.find((item) => item.id === id) ?? null; writeCache(moneyKey, all.filter((item) => item.id !== id)); queueData('money', 'delete', id, previous, true); if (previous?.kind === 'despesa') await syncLocalConcertExpenseById(previous.concertId); return }
   const { data: currentMovement, error: currentMovementError } = await supabase.from('money_movements').select('source_type').eq('id', id).maybeSingle()
   if (currentMovementError && !missingAutomaticMovementColumns(currentMovementError)) throw currentMovementError
   if (currentMovement?.source_type) throw new Error('Els moviments automàtics no es poden eliminar manualment.')

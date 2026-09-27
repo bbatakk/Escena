@@ -77,7 +77,7 @@ export interface MoneyMovement {
   date: string
   category: string
   note: string
-  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total'
+  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total' | 'concert_expense'
   sourceId?: string
 }
 
@@ -176,7 +176,7 @@ export interface Concert {
   details: ConcertDetails
 }
 
-export function generatedIncomeMovements(concerts: Concert[], label: LabelAgreement | null, sales: MerchSale[], today = new Date().toISOString().slice(0, 10)): MoneyMovement[] {
+export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgreement | null, sales: MerchSale[], today = new Date().toISOString().slice(0, 10)): MoneyMovement[] {
   const generated: MoneyMovement[] = []
   for (const concert of concerts) {
     const settlement = concertSettlement(concert, label)
@@ -184,6 +184,11 @@ export function generatedIncomeMovements(concerts: Concert[], label: LabelAgreem
       id: `automatic:concert-fee:${concert.id}`, sourceType: 'concert_fee', sourceId: concert.id,
       concertId: concert.id, kind: 'ingres', amount: settlement.netPaid,
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
+    })
+    if (concert.details.expenses > 0) generated.push({
+      id: `automatic:concert-expense:${concert.id}`, sourceType: 'concert_expense', sourceId: concert.id,
+      concertId: concert.id, kind: 'despesa', amount: concert.details.expenses,
+      date: concert.updatedAt?.slice(0, 10) || today, category: 'Despeses del concert', note: `Generat automàticament · ${concert.title}`,
     })
   }
   const revenueByConcert = merchRevenueByConcert(concerts, sales)

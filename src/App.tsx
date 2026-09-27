@@ -241,7 +241,7 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
   }, [materialOpen])
   const concertSales = merchSales.filter((item) => item.concertId === concert.id)
   const concertMoney = moneyMovements.filter((item) => item.concertId === concert.id)
-  const concertExpenseMovements = concertMoney.filter((item) => item.kind === 'despesa')
+  const concertExpenseMovements = concertMoney.filter((item) => item.kind === 'despesa' && !item.sourceType)
   const pending = getPending(concert)
   const sortedSchedule = [...d.schedule].filter((x) => x.time || x.label).sort((a, b) => a.time.localeCompare(b.time))
   const closing = concertClosingSummary(concert, labelAgreement, merchSales, moneyMovements)

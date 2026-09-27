@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Plus, Trash2, Wallet } from 'lucide-react'
 import { deleteMoneyMovement, listMerchSales, listMoneyMovements, saveMoneyMovement } from './data'
-import { createId, formatDate, formatMoney, generatedIncomeMovements, type Concert, type LabelAgreement, type MerchSale, type MoneyMovement, type MoneyMovementKind } from './model'
+import { createId, formatDate, formatMoney, generatedTreasuryMovements, type Concert, type LabelAgreement, type MerchSale, type MoneyMovement, type MoneyMovementKind } from './model'
 
 function today(): string { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` }
 
@@ -18,7 +18,7 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { let active = true; const load = () => { void Promise.all([listMoneyMovements(), listMerchSales()]).then(([items, sales]) => { if (active) { const sources = new Set(items.filter((item) => item.sourceType && item.sourceId).map((item) => `${item.sourceType}:${item.sourceId}`)); const projected = generatedIncomeMovements(concerts, labelAgreement, sales).filter((item) => !item.sourceType || !item.sourceId || !sources.has(`${item.sourceType}:${item.sourceId}`)); setMovements([...projected, ...items]); setMerchSales(sales) } }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els moviments.') }).finally(() => { if (active) setLoading(false) }) }; load(); window.addEventListener('escena:offline-queue-change', load); return () => { active = false; window.removeEventListener('escena:offline-queue-change', load) } }, [concerts, labelAgreement])
+  useEffect(() => { let active = true; const load = () => { void Promise.all([listMoneyMovements(), listMerchSales()]).then(([items, sales]) => { if (active) { const sources = new Set(items.filter((item) => item.sourceType && item.sourceId).map((item) => `${item.sourceType}:${item.sourceId}`)); const manualExpenseConcerts = new Set(items.filter((item) => item.kind === 'despesa' && !item.sourceType && item.concertId).map((item) => item.concertId)); const projected = generatedTreasuryMovements(concerts, labelAgreement, sales).filter((item) => !(item.sourceType === 'concert_expense' && item.sourceId && manualExpenseConcerts.has(item.sourceId)) && (!item.sourceType || !item.sourceId || !sources.has(`${item.sourceType}:${item.sourceId}`))); setMovements([...projected, ...items]); setMerchSales(sales) } }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els moviments.') }).finally(() => { if (active) setLoading(false) }) }; load(); window.addEventListener('escena:offline-queue-change', load); return () => { active = false; window.removeEventListener('escena:offline-queue-change', load) } }, [concerts, labelAgreement])
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -40,7 +40,8 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
   }
 
   const recordedSources = new Set(movements.filter((item) => item.sourceType && item.sourceId).map((item) => `${item.sourceType}:${item.sourceId}`))
-  const automaticMovements = generatedIncomeMovements(concerts, labelAgreement, merchSales).filter((item) => !item.sourceType || !item.sourceId || !recordedSources.has(`${item.sourceType}:${item.sourceId}`))
+  const manualExpenseConcerts = new Set(movements.filter((item) => item.kind === 'despesa' && !item.sourceType && item.concertId).map((item) => item.concertId))
+  const automaticMovements = generatedTreasuryMovements(concerts, labelAgreement, merchSales).filter((item) => !(item.sourceType === 'concert_expense' && item.sourceId && manualExpenseConcerts.has(item.sourceId)) && (!item.sourceType || !item.sourceId || !recordedSources.has(`${item.sourceType}:${item.sourceId}`)))
   const displayedMovements = [...automaticMovements, ...movements]
   const income = displayedMovements.filter((item) => item.kind === 'ingres').reduce((sum, item) => sum + item.amount, 0)
   const totalIncome = income
