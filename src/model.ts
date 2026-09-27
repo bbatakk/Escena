@@ -173,6 +173,31 @@ export interface Concert {
   details: ConcertDetails
 }
 
+export interface ConcertClosingSummary {
+  netFee: number
+  merchRevenue: number
+  usesDetailedSales: boolean
+  manualIncome: number
+  manualExpenses: number
+  legacyExpenses: number
+  balance: number
+}
+
+export function concertClosingSummary(concert: Concert, label: LabelAgreement | null, allSales: MerchSale[], allMovements: MoneyMovement[]): ConcertClosingSummary {
+  const sales = allSales.filter((sale) => sale.concertId === concert.id)
+  const movements = allMovements.filter((movement) => movement.concertId === concert.id)
+  const manualIncome = movements.filter((movement) => movement.kind === 'ingres').reduce((sum, movement) => sum + movement.amount, 0)
+  const expenseMovements = movements.filter((movement) => movement.kind === 'despesa')
+  const manualExpenses = expenseMovements.reduce((sum, movement) => sum + movement.amount, 0)
+  const legacyExpenses = expenseMovements.length ? 0 : concert.details.expenses
+  const netFee = concertSettlement(concert, label).netPaid
+  const usesDetailedSales = sales.length > 0
+  const merchRevenue = usesDetailedSales
+    ? sales.reduce((sum, sale) => sum + sale.quantity * sale.unitPrice, 0)
+    : concert.details.merchSales
+  return { netFee, merchRevenue, usesDetailedSales, manualIncome, manualExpenses, legacyExpenses, balance: netFee + merchRevenue + manualIncome - manualExpenses - legacyExpenses }
+}
+
 export const statusLabels: Record<ConcertStatus, string> = {
   en_converses: 'En converses',
   reservat: 'Reservat',

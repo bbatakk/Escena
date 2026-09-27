@@ -26,6 +26,17 @@ describe('validació de backups', () => {
     expect(validateBackup({ ...emptyBackup, merchProducts: [{ id: 'product', name: 'Samarreta', price: 10, stock: 3, sizes: [{ name: 'M', stock: -1 }] }] })).toBe(false)
   })
 
+  it('valida l’estructura dels concerts abans de mostrar-ne la previsualització', () => {
+    const concert = { ...newConcert(), date: '2026-10-05' }
+    expect(validateBackup({ ...emptyBackup, concerts: [concert] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, concerts: [{ ...concert, details: { ...concert.details, documents: [{ id: 'doc', name: 'Rider', url: '', direction: 'executar', status: 'pendent' }] } }] })).toBe(false)
+  })
+
+  it('continua acceptant backups antics amb camps afegits en versions posteriors', () => {
+    const concert = { ...newConcert(), date: '2026-10-05' }
+    expect(validateBackup({ ...emptyBackup, concerts: [concert], library: [{ id: 'doc', name: 'Rider', url: '' }], money: [{ id: 'movement', kind: 'ingres', amount: 10, date: '2026-10-05' }], merchProducts: [{ id: 'product', name: 'CD', price: 10, stock: 5 }], merchSales: [{ id: 'sale', concertId: concert.id, productId: 'product', quantity: 1, unitPrice: 10 }], people: [{ id: 'person', name: 'Músic' }], materials: [{ id: 'material', name: 'Micròfon' }], setlists: [{ id: 'setlist', name: 'Festival', songs: ['Tema'] }] })).toBe(true)
+  })
+
   it('accepta backups antics i valida les condicions opcionals de discogràfica', () => {
     expect(validateBackup(emptyBackup)).toBe(true)
     expect(validateBackup({ ...emptyBackup, labelAgreement: { name: 'Segell', tiers: [{ above: 500, percent: 15 }] } })).toBe(true)

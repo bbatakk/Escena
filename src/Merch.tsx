@@ -15,7 +15,7 @@ export default function Merch({ concerts }: { concerts: Concert[] }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => { let active = true; Promise.all([listMerchProducts(), listMerchSales()]).then(([items, entries]) => { if (active) { setProducts(items); setSales(entries) } }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’ha pogut carregar el marxandatge.') }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [])
+  useEffect(() => { let active = true; const load = () => { void Promise.all([listMerchProducts(), listMerchSales()]).then(([items, entries]) => { if (active) { setProducts(items); setSales(entries) } }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’ha pogut carregar el marxandatge.') }).finally(() => { if (active) setLoading(false) }) }; load(); window.addEventListener('escena:offline-queue-change', load); return () => { active = false; window.removeEventListener('escena:offline-queue-change', load) } }, [])
   const soldFor = (id: string) => sales.filter((item) => item.productId === id).reduce((sum, item) => sum + item.quantity, 0)
   const revenueByConcert = merchRevenueByConcert(concerts, sales)
   const units = sales.reduce((sum, item) => sum + item.quantity, 0)

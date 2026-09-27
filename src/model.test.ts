@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commissionRate, concertSettlement, getPending, merchRevenueByConcert, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
+import { commissionRate, concertClosingSummary, concertSettlement, getPending, merchRevenueByConcert, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
 
 describe('discogràfica i liquidació del catxet', () => {
   const agreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }, { above: 1000, percent: 20 }] }
@@ -122,6 +122,32 @@ describe('ingressos de marxandatge per concert', () => {
     expect(revenues.get(withDetail.id)).toBe(30)
     expect(revenues.get(legacy.id)).toBe(42)
     expect(totalMerchRevenue([withDetail, legacy], sales)).toBe(72)
+  })
+})
+
+describe('tancament econòmic del concert', () => {
+  it('prefereix vendes i despeses detallades als resums antics sense duplicar-los', () => {
+    const concert = newConcert()
+    concert.id = 'concert-1'
+    concert.feePaid = 500
+    concert.details.management = 'banda'
+    concert.details.merchSales = 100
+    concert.details.expenses = 40
+    const summary = concertClosingSummary(concert, null,
+      [{ id: 'sale-1', concertId: concert.id, productId: 'shirt', quantity: 2, unitPrice: 15, note: '' }],
+      [
+        { id: 'income-1', concertId: concert.id, kind: 'ingres', amount: 25, date: '2026-10-05', category: 'Aportació', note: '' },
+        { id: 'expense-1', concertId: concert.id, kind: 'despesa', amount: 12, date: '2026-10-05', category: 'Gasolina', note: '' },
+      ])
+    expect(summary).toMatchObject({ netFee: 500, merchRevenue: 30, usesDetailedSales: true, manualIncome: 25, manualExpenses: 12, legacyExpenses: 0, balance: 543 })
+  })
+
+  it('utilitza resums antics només quan no hi ha registres detallats', () => {
+    const concert = newConcert()
+    concert.id = 'legacy'
+    concert.details.merchSales = 42
+    concert.details.expenses = 18
+    expect(concertClosingSummary(concert, null, [], [])).toMatchObject({ merchRevenue: 42, usesDetailedSales: false, legacyExpenses: 18, balance: 24 })
   })
 })
 

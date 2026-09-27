@@ -1,15 +1,15 @@
-import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
   CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu,
-  House, ListMusic, Music2, Navigation, PackageCheck, Paperclip, Pencil, Plus, Search, ShoppingBag, Sparkles, Ticket, Trash2,
+  House, ListMusic, Mail, MapPinned, Music2, Navigation, PackageCheck, Paperclip, Pencil, Phone, Plus, Search, ShoppingBag, Sparkles, Ticket, Trash2,
   Settings as SettingsIcon, UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
-import { cloudConfigured, deleteConcert, deleteMerchSale, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
-import { concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, shouldMarkConcertRealized, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type SetlistTemplate } from './model'
+import { cloudConfigured, deleteConcert, deleteMerchSale, discardOfflineDataChange, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, getOfflineSyncStatus, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, listResource, removeConcertDocumentFile, resolveOfflineConcertConflict, resolveOfflineDataConflict, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument, type OfflineSyncItem } from './data'
+import { concertClosingSummary, concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, shouldMarkConcertRealized, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 import { useDialogFocus } from './useDialogFocus'
 
@@ -174,6 +174,23 @@ function StageSetlist({ title, songs, onClose }: { title: string; songs: string[
   </div>
 }
 
+function ConcertDayView({ concert, onClose, onMaterial, onSetlist }: { concert: Concert; onClose: () => void; onMaterial: () => void; onSetlist: () => void }) {
+  useDialogFocus(true, '.concert-day-view')
+  useEffect(() => {
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', closeWithEscape)
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener('keydown', closeWithEscape) }
+  }, [onClose])
+  const details = concert.details
+  const schedule = [...details.schedule].filter((item) => item.time || item.label || item.place).sort((a, b) => a.time.localeCompare(b.time))
+  const songs = details.setlist.split('\n').map((song) => song.trim()).filter(Boolean)
+  const place = [concert.venue, concert.city, concert.country].filter(Boolean).join(' · ')
+
+  return <div className="concert-day-overlay"><section className="concert-day-view" role="dialog" aria-modal="true" aria-label={`Informació del dia del concert ${concert.title}`}><header className="concert-day-header"><div><span className="eyebrow">A MÀ EL DIA DEL CONCERT</span><h2>{concert.title}</h2><p>{formatDate(concert.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div><button type="button" className="icon-button" aria-label="Tancar vista del dia" onClick={onClose}><X size={21} /></button></header><div className="concert-day-content"><section className="concert-day-location"><MapPinned size={20} /><div><strong>{place || 'Ubicació per concretar'}</strong>{concert.address ? <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(concert.address)}`} target="_blank" rel="noreferrer">{concert.address} · Obrir mapa <ExternalLink size={13} /></a> : <small>Encara no hi ha adreça del concert.</small>}</div></section>{details.contactName || details.contactPhone || details.contactEmail ? <section className="concert-day-contact"><span className="eyebrow">CONTACTE</span><strong>{details.contactName || 'Organització'}</strong><div>{details.contactPhone ? <a href={`tel:${details.contactPhone}`}><Phone size={15} />{details.contactPhone}</a> : null}{details.contactEmail ? <a href={`mailto:${details.contactEmail}`}><Mail size={15} />{details.contactEmail}</a> : null}</div></section> : null}<section className="concert-day-section"><div className="concert-day-section-heading"><Clock3 size={17} /><h3>Horaris</h3></div>{schedule.length ? <ol className="concert-day-schedule">{schedule.map((item) => <li key={item.id}><time>{item.time || '—'}</time><div><strong>{item.label || item.kind || 'Horari'}</strong>{item.place ? <small>{item.place}</small> : null}</div></li>)}</ol> : <p className="section-empty">Encara no hi ha horaris afegits.</p>}</section><section className="concert-day-section"><div className="concert-day-section-heading"><ListMusic size={17} /><h3>Setlist · {songs.length} cançons</h3>{songs.length ? <button type="button" className="text-button" onClick={onSetlist}>Mode escenari <ArrowRight size={14} /></button> : null}</div>{songs.length ? <ol className="concert-day-songs">{songs.map((song, index) => <li key={`${song}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span>{song}</li>)}</ol> : <p className="section-empty">Encara no hi ha setlist.</p>}</section><section className="concert-day-material"><div><PackageCheck size={19} /><div><strong>Material</strong><small>{details.materials.filter((item) => item.loaded).length} de {details.materials.length} carregat</small></div></div><button type="button" className="button button-primary" onClick={onMaterial}>Obrir checklist</button></section></div></section></div>
+}
+
 function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, onUpload, onRemoveFile }: { concert: Concert; labelAgreement: LabelAgreement | null; onBack: () => void; onEdit: () => void; onDelete: () => void; onToggle: (id: string) => Promise<void>; onUpload: (id: string, file: File) => Promise<void>; onRemoveFile: (id: string) => Promise<void> }) {
   const [busyMaterial, setBusyMaterial] = useState(false)
   const [materialError, setMaterialError] = useState('')
@@ -183,12 +200,14 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
   const [people, setPeople] = useState<BandPerson[]>([])
   const [merchProducts, setMerchProducts] = useState<MerchProduct[]>([])
   const [merchSales, setMerchSales] = useState<MerchSale[]>([])
+  const [moneyMovements, setMoneyMovements] = useState<MoneyMovement[]>([])
   const [savingProductId, setSavingProductId] = useState<string | null>(null)
   const [undoingSaleIds, setUndoingSaleIds] = useState<string[]>([])
   const [saleError, setSaleError] = useState('')
   const [merchSearch, setMerchSearch] = useState('')
   const [merchSaleOpen, setMerchSaleOpen] = useState(false)
   const [materialOpen, setMaterialOpen] = useState(false)
+  const [dayViewOpen, setDayViewOpen] = useState(false)
   const [stageSetlistOpen, setStageSetlistOpen] = useState(false)
   useDialogFocus(materialOpen, '.material-window')
   useDialogFocus(merchSaleOpen, '.merch-sale-window')
@@ -203,7 +222,7 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
     })).then((entries) => { if (active) setDocumentLinks(Object.fromEntries(entries)) })
     return () => { active = false }
   }, [concert.details.documents])
-  useEffect(() => { let active = true; Promise.all([listResource<BandPerson>('band_people'), listMerchProducts(), listMerchSales()]).then(([items, products, sales]) => { if (active) { setPeople(items); setMerchProducts(products); setMerchSales(sales) } }).catch((cause) => { if (active) setSaleError(cause instanceof Error ? cause.message : 'No s’han pogut carregar les vendes.') }); return () => { active = false } }, [concert.id])
+  useEffect(() => { let active = true; const load = () => { void Promise.all([listResource<BandPerson>('band_people'), listMerchProducts(), listMerchSales(), listMoneyMovements()]).then(([items, products, sales, movements]) => { if (active) { setPeople(items); setMerchProducts(products); setMerchSales(sales); setMoneyMovements(movements) } }).catch((cause) => { if (active) setSaleError(cause instanceof Error ? cause.message : 'No s’han pogut carregar les dades del concert.') }) }; load(); window.addEventListener('escena:offline-queue-change', load); return () => { active = false; window.removeEventListener('escena:offline-queue-change', load) } }, [concert.id])
   useEffect(() => {
     if (!merchSaleOpen) return
     const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setMerchSaleOpen(false) }
@@ -221,8 +240,11 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener('keydown', closeWithEscape) }
   }, [materialOpen])
   const concertSales = merchSales.filter((item) => item.concertId === concert.id)
+  const concertMoney = moneyMovements.filter((item) => item.concertId === concert.id)
+  const concertExpenseMovements = concertMoney.filter((item) => item.kind === 'despesa')
   const pending = getPending(concert)
   const sortedSchedule = [...d.schedule].filter((x) => x.time || x.label).sort((a, b) => a.time.localeCompare(b.time))
+  const closing = concertClosingSummary(concert, labelAgreement, merchSales, moneyMovements)
   const concertMerchRevenue = concertSales.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
   const visibleMerchProducts = merchProducts.filter((product) => product.active && `${product.name} ${(product.sizes || []).map((size) => size.name).join(' ')}`.toLocaleLowerCase('ca').includes(merchSearch.toLocaleLowerCase('ca')))
   const soldForConcert = (productId: string, size?: string) => concertSales.filter((item) => item.productId === productId && (size ? item.size === size : !item.size)).reduce((sum, item) => sum + item.quantity, 0)
@@ -250,9 +272,9 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
   async function quickSale(product: MerchProduct, size?: string) { const sold = merchSales.filter((item) => item.productId === product.id && (size ? item.size === size : !item.size)).reduce((sum, item) => sum + item.quantity, 0); const available = size ? product.sizes?.find((item) => item.name === size)?.stock ?? 0 : product.stock; if (sold >= available) { setSaleError(`No queda estoc de ${product.name}${size ? ` talla ${size}` : ''}.`); return } const savingKey = `${product.id}:${size || ''}`; setSavingProductId(savingKey); setSaleError(''); try { const saved = await saveMerchSale({ id: createId(), concertId: concert.id, productId: product.id, quantity: 1, unitPrice: product.price, note: '', size }); setMerchSales((items) => [saved, ...items]) } catch (cause) { setSaleError(cause instanceof Error ? cause.message.replace('No hi ha prou estoc disponible', `No queda prou estoc de ${product.name}${size ? ` talla ${size}` : ''}`).replace('Producte de marxandatge no trobat', 'No s’ha trobat el producte.') : 'No s’ha pogut registrar la venda.') } finally { setSavingProductId((id) => id === savingKey ? null : id) } }
   async function undoSale(sale: MerchSale) { setUndoingSaleIds((ids) => [...ids, sale.id]); setSaleError(''); try { await deleteMerchSale(sale.id); setMerchSales((items) => items.filter((item) => item.id !== sale.id)) } catch (cause) { setSaleError(cause instanceof Error ? cause.message : 'No s’ha pogut desfer la venda.') } finally { setUndoingSaleIds((ids) => ids.filter((id) => id !== sale.id)) } }
 
-  return <div className="detail-shell">
+  return <>{dayViewOpen ? <ConcertDayView concert={concert} onClose={() => setDayViewOpen(false)} onMaterial={() => { setDayViewOpen(false); setMaterialOpen(true) }} onSetlist={() => { setDayViewOpen(false); setStageSetlistOpen(true) }} /> : null}<div className="detail-shell">
     <button className="text-button back-button" onClick={onBack}><ArrowLeft size={17} /> Tornar als concerts</button>
-     <div className="detail-hero"><div className="detail-hero-main"><span className="eyebrow">FITXA DE CONCERT <span className="eyebrow-separator">/</span> {statusLabels[concert.status].toUpperCase()}</span><h1>{concert.title}</h1><div className="hero-meta"><span><CalendarDays size={17} />{formatDate(concert.date)}</span><span><MapPin size={17} />{concertPlace(concert) || 'Ubicació per concretar'}</span></div></div><div className="hero-action"><button className="button button-light" onClick={onEdit}><Pencil size={16} /> Editar fitxa</button></div></div>
+     <div className="detail-hero"><div className="detail-hero-main"><span className="eyebrow">FITXA DE CONCERT <span className="eyebrow-separator">/</span> {statusLabels[concert.status].toUpperCase()}</span><h1>{concert.title}</h1><div className="hero-meta"><span><CalendarDays size={17} />{formatDate(concert.date)}</span><span><MapPin size={17} />{concertPlace(concert) || 'Ubicació per concretar'}</span></div></div><div className="hero-action"><button type="button" className="button button-light day-view-trigger" onClick={() => setDayViewOpen(true)}><CalendarDays size={16} /> Dia del concert</button><button className="button button-light" onClick={onEdit}><Pencil size={16} /> Editar fitxa</button></div></div>
      <nav className="concert-quick-actions" aria-label="Accions del concert"><span className="concert-quick-actions-label">ACCIONS DEL CONCERT</span><button type="button" onClick={() => setMaterialOpen(true)}><span className="concert-quick-action-icon"><PackageCheck size={17} /></span><span><strong>Material</strong><small>{d.materials.filter((item) => item.loaded).length}/{d.materials.length} carregat</small></span><ArrowRight size={15} /></button><button type="button" onClick={() => { setSaleError(''); setMerchSaleOpen(true) }}><span className="concert-quick-action-icon"><ShoppingBag size={17} /></span><span><strong>Marxandatge</strong><small>{concertSales.reduce((sum, item) => sum + item.quantity, 0)} unitats · {formatMoney(concertMerchRevenue)}</small></span><ArrowRight size={15} /></button><button type="button" disabled={!d.setlist} onClick={() => setStageSetlistOpen(true)}><span className="concert-quick-action-icon"><ListMusic size={17} /></span><span><strong>Setlist</strong><small>{d.setlist ? `${d.setlist.split('\n').filter(Boolean).length} cançons` : 'No carregat'}</small></span><ArrowRight size={15} /></button></nav>
      <div className="detail-body"><div className="detail-main">
       <section className="pending-panel"><div className="panel-title"><div className="panel-title-icon"><CircleHelp size={19} /></div><div><span className="eyebrow">SEGUIMENT</span><h2>Coses pendents <span className="count-pill">{pending.length}</span></h2></div></div>{pending.length ? <ul className="pending-list">{pending.map((item, index) => <li key={`${item}-${index}`}><span className="pending-marker" />{item}</li>)}</ul> : <p className="empty-pending"><Check size={18} /> No hi ha res pendent segons les dades d'aquesta fitxa.</p>}</section>
@@ -267,10 +289,10 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
       <section className="aside-card"><div className="aside-heading"><Navigation size={18} /><h3>Ubicació</h3></div><strong>{concert.venue || 'Lloc per concretar'}</strong>{concert.address ? <a className="address-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(concert.address)}`} target="_blank" rel="noreferrer">{concert.address} <ExternalLink size={14} /></a> : <p>Encara no hi ha adreça</p>}{concert.city || concert.country ? <p>{[concert.city, concert.country].filter(Boolean).join(', ')}</p> : null}</section>
       <section className="aside-card"><div className="aside-heading"><UsersRound size={18} /><h3>Persones</h3></div>{d.contactName ? <><span className="aside-label">CONTACTE RESPONSABLE</span><strong>{d.contactName}</strong>{d.contactPhone ? <a href={`tel:${d.contactPhone}`} className="aside-contact">{d.contactPhone}</a> : null}{d.contactEmail ? <a href={`mailto:${d.contactEmail}`} className="aside-contact">{d.contactEmail}</a> : null}</> : null}{d.personIds.length ? <div className="selected-people">{d.personIds.map((id) => <span key={id}>{people.find((person) => person.id === id)?.name || 'Persona eliminada'}</span>)}</div> : null}{!d.contactName && !d.personIds.length ? <p>Encara no hi ha contacte.</p> : null}{d.team ? <><span className="aside-label team-label">NOTES D’EQUIP</span><p>{d.team}</p></> : null}</section>
       <section className="aside-card"><div className="aside-heading"><Ticket size={18} /><h3>Hospitalitat</h3></div><InfoRow label="Sopar">{d.dinner === 'si' ? 'Sí' : d.dinner === 'no' ? 'No' : 'Encara no se sap'}</InfoRow><InfoRow label="Allotjament">{d.lodging === 'si' ? d.lodgingDetails || 'Sí' : d.lodging === 'no' ? 'No cal' : 'Encara no se sap'}</InfoRow>{d.lodgingAddress ? <a className="inline-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.lodgingAddress)}`} target="_blank" rel="noreferrer">{d.lodgingAddress} <ExternalLink size={14} /></a> : null}</section>
-       <section className="aside-card"><div className="aside-heading"><Wallet size={18} /><h3>Tancament</h3></div>{concertSales.length ? <InfoRow label="Marxandatge">{formatMoney(concertMerchRevenue)}</InfoRow> : d.merchSales > 0 ? <InfoRow label="Vendes antigues (resum)">{formatMoney(d.merchSales)}</InfoRow> : <InfoRow label="Marxandatge">{formatMoney(0)}</InfoRow>}<InfoRow label="Despeses">{formatMoney(d.expenses)}</InfoRow>{d.notes ? <p className="closing-notes">{d.notes}</p> : null}</section>
+        <section className="aside-card closing-card"><div className="aside-heading"><Wallet size={18} /><h3>Tancament del concert</h3></div><div className="info-rows"><InfoRow label="Catxet net cobrat">{settlement.unresolved ? 'Pendent de classificar' : formatMoney(closing.netFee)}</InfoRow><InfoRow label={closing.usesDetailedSales ? 'Marxandatge venut' : 'Marxandatge (resum antic)'}>{formatMoney(closing.merchRevenue)}</InfoRow><InfoRow label="Altres ingressos reals">{formatMoney(closing.manualIncome)}</InfoRow><InfoRow label={concertExpenseMovements.length ? 'Despeses registrades' : 'Despeses (resum antic)'}>{formatMoney(closing.manualExpenses || closing.legacyExpenses)}</InfoRow></div>{closing.usesDetailedSales && d.merchSales > 0 ? <small className="closing-legacy-note">El resum antic de vendes no se suma perquè ja hi ha vendes detallades.</small> : null}{concertExpenseMovements.length && d.expenses > 0 ? <small className="closing-legacy-note">El resum antic de despeses no se suma perquè ja hi ha moviments registrats.</small> : null}<div className={`concert-closing-balance ${closing.balance < 0 ? 'is-negative' : ''}`}><span>Balanç del concert</span><strong>{formatMoney(closing.balance)}</strong></div>{concertMoney.length ? <details className="concert-closing-movements"><summary>Moviments vinculats · {concertMoney.length}</summary>{concertMoney.map((movement) => <div key={movement.id}><span>{movement.category || (movement.kind === 'ingres' ? 'Ingrés' : 'Despesa')} · {formatDate(movement.date)}</span><strong className={movement.kind === 'ingres' ? 'positive-money' : 'negative-money'}>{movement.kind === 'despesa' ? '−' : '+'}{formatMoney(movement.amount)}</strong></div>)}</details> : null}{settlement.unresolved && concert.feePaid > 0 ? <p className="label-concert-note">El catxet cobrat no entra al balanç fins que indiquis qui ha gestionat el concert.</p> : null}{d.notes ? <p className="closing-notes">{d.notes}</p> : null}</section>
       <button type="button" className="delete-link" onClick={onDelete}><Trash2 size={15} /> Eliminar concert</button>
        </aside></div>{materialOpen ? <div className="material-overlay"><section className="material-window" role="dialog" aria-modal="true" aria-label={`Material del concert ${concert.title}`}><header className="merch-sale-header"><div><span className="eyebrow">CÀRREGA DEL CONCERT</span><h2>Material a portar</h2><p>{concert.title} · Marca cada element quan el carreguis.</p></div><button type="button" className="merch-sale-close" aria-label="Tancar material" onClick={() => setMaterialOpen(false)}><X size={21} /></button></header><div className="material-summary"><div><span>Carregat</span><strong>{d.materials.filter((item) => item.loaded).length}</strong></div><div><span>Pendent</span><strong>{d.materials.filter((item) => !item.loaded).length}</strong></div><div><span>Total</span><strong>{d.materials.length}</strong></div></div><div className="material-window-content">{d.materials.length ? Array.from(new Set(d.materials.map((item) => item.category || 'Sense categoria'))).map((category) => <section className="material-group" key={category}><span className="eyebrow">{category}</span><div className="material-list">{d.materials.filter((item) => (item.category || 'Sense categoria') === category).map((item) => <button type="button" className={`material-item material-toggle ${item.loaded ? 'is-loaded' : ''}`} aria-pressed={item.loaded} disabled={busyMaterial} key={item.id} onClick={() => void toggleMaterial(item.id)}><span className="check-visual"><Check size={14} /></span><strong>{item.name || 'Material sense nom'}</strong></button>)}</div></section>) : <p className="section-empty">Afegeix material a la fitxa per preparar la càrrega.</p>}{materialError ? <p className="form-error" role="alert">{materialError}</p> : null}</div></section></div> : null}{merchSaleOpen ? <div className="merch-sale-overlay"><section className="merch-sale-window" role="dialog" aria-modal="true" aria-label={`Venda de marxandatge de ${concert.title}`}><header className="merch-sale-header"><div><span className="eyebrow">VENDA AL CONCERT</span><h2>Marxandatge</h2><p>{concert.title} · Toca `+1` per cada unitat venuda.</p></div><button type="button" className="merch-sale-close" aria-label="Tancar venda de marxandatge" onClick={() => setMerchSaleOpen(false)}><X size={21} /></button></header><div className="merch-sale-summary"><div><span>Ingressos</span><strong>{formatMoney(concertMerchRevenue)}</strong></div><div><span>Unitats</span><strong>{concertSales.reduce((sum, item) => sum + item.quantity, 0)}</strong></div><div><span>Productes</span><strong>{merchProducts.length}</strong></div></div>{merchProducts.length ? <label className="quick-sale-search merch-sale-search"><Search size={17} /><input type="search" value={merchSearch} onChange={(event) => setMerchSearch(event.target.value)} placeholder="Cerca producte o talla…" /><span>{visibleMerchProducts.length}</span></label> : null}<div className="merch-sale-content"><div>{visibleMerchProducts.length ? <div className="quick-sale-grid">{visibleMerchProducts.map((product) => { const sizes = product.sizes || []; const productKey = `${product.id}:`; return <article className="quick-sale-product" key={product.id}><div className="quick-product-top"><div><strong>{product.name}</strong><span>{formatMoney(product.price)}</span></div>{!sizes.length ? <button type="button" className="quick-sale-add" disabled={savingProductId === productKey || stockRemaining(product) === 0} onClick={() => void quickSale(product)}>{savingProductId === productKey ? '…' : '+1'}</button> : null}</div>{sizes.length ? <div className="quick-sale-sizes">{sizes.map((size) => { const key = `${product.id}:${size.name}`; const remaining = stockRemaining(product, size.name); const soldHere = soldForConcert(product.id, size.name); return <button type="button" key={size.name} disabled={savingProductId === key || remaining === 0} onClick={() => void quickSale(product, size.name)}><strong>{size.name}</strong><small>{savingProductId === key ? 'Desant…' : remaining ? `${remaining} disponibles` : 'Esgotada'}</small><span>{soldHere} al concert</span></button> })}</div> : <div className="quick-product-stock"><span>{stockRemaining(product)} disponibles</span><span>{soldForConcert(product.id)} venudes aquí</span></div>}</article> })}</div> : merchProducts.length ? <p className="section-empty">No hi ha productes que coincideixin amb «{merchSearch}».</p> : <p className="section-empty">Afegeix productes a Marxandatge per activar la venda.</p>}{saleError ? <p className="form-error" role="alert">{saleError}</p> : null}</div>{concertSales.length ? <div className="quick-sale-history merch-sale-history"><div className="quick-sale-history-heading"><strong>Últimes vendes</strong><span>{concertSales.length}</span></div>{concertSales.slice(0, 8).map((sale) => <div className="quick-sale-history-row" key={sale.id}><span className="quick-sale-history-quantity">{sale.quantity}×</span><span className="quick-sale-history-name">{merchProducts.find((item) => item.id === sale.productId)?.name || 'Producte eliminat'}{sale.size ? ` · ${sale.size}` : ''}</span><strong>{formatMoney(sale.quantity * sale.unitPrice)}</strong><button type="button" className="text-button" disabled={undoingSaleIds.includes(sale.id)} onClick={() => void undoSale(sale)}>{undoingSaleIds.includes(sale.id) ? '…' : 'Desfer'}</button></div>)}</div> : <p className="merch-sale-empty">Encara no hi ha vendes en aquest concert.</p>}</div></section></div> : null}{stageSetlistOpen ? <StageSetlist title={concert.title} songs={d.setlist.split('\n').filter(Boolean)} onClose={() => setStageSetlistOpen(false)} /> : null}
-  </div>
+  </div></>
 }
 
 export default function App() {
@@ -297,6 +319,17 @@ export default function App() {
   const [concertYear, setConcertYear] = useState('tots')
   const [menuOpen, setMenuOpen] = useState(false)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  const [offlineSyncStatus, setOfflineSyncStatus] = useState(() => getOfflineSyncStatus())
+  const formDirtyRef = useRef(false)
+  const formHistoryRef = useRef<AppHistoryState | null>(null)
+
+  function updateFormDirty(dirty: boolean) { formDirtyRef.current = dirty }
+  function confirmLeaveForm(): boolean {
+    if (!formDirtyRef.current) return true
+    const leave = window.confirm('Hi ha canvis desats com a esborrany. Vols sortir de la fitxa? Podràs recuperar-los en tornar-hi.')
+    if (leave) updateFormDirty(false)
+    return leave
+  }
 
   useEffect(() => { localStorage.setItem('escena-theme', theme); document.documentElement.dataset.theme = theme }, [theme])
 
@@ -328,6 +361,11 @@ export default function App() {
     const restore = (event: PopStateEvent) => {
       const state = event.state as AppHistoryState | null
       if (!state?.escena) return
+      if (screen === 'form' && formDirtyRef.current) {
+        window.history.pushState(formHistoryRef.current || { escena: true, screen: 'form', formInitial: formInitial || undefined }, '')
+        if (confirmLeaveForm()) window.history.back()
+        return
+      }
       setScreen(state.screen)
       setSelectedId(state.selectedId || null)
       setFormInitial(state.formInitial || null)
@@ -336,7 +374,7 @@ export default function App() {
     }
     window.addEventListener('popstate', restore)
     return () => window.removeEventListener('popstate', restore)
-  }, [])
+  }, [screen, formInitial])
 
   useEffect(() => {
     if (!authReady || (cloudConfigured && !session)) {
@@ -350,6 +388,14 @@ export default function App() {
     listConcerts().then(markPastConcertsRealized).then((data) => { if (alive) { setConcerts(data); setError('') } }).catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els concerts.') }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [authReady, session?.user.id])
+
+  useEffect(() => {
+    const refreshQueue = () => setOfflineSyncStatus(getOfflineSyncStatus())
+    window.addEventListener('escena:offline-queue-change', refreshQueue)
+    window.addEventListener('storage', refreshQueue)
+    refreshQueue()
+    return () => { window.removeEventListener('escena:offline-queue-change', refreshQueue); window.removeEventListener('storage', refreshQueue) }
+  }, [])
 
   useEffect(() => {
     const becameOnline = () => { setOnline(true); void Promise.all([syncOfflineConcerts(), syncOfflineData()]).then(() => { if (cloudConfigured && session) void listConcerts().then(markPastConcertsRealized).then(setConcerts).catch(() => {}) }) }
@@ -376,12 +422,32 @@ export default function App() {
   const next = sorted.find((item) => item.date >= todayString && item.status !== 'cancel·lat')
   const totalPending = concerts.reduce((sum, item) => sum + getPending(item).length, 0)
 
-  function open(id: string, replace = false) { const state: AppHistoryState = { escena: true, screen: 'detail', selectedId: id }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setSelectedId(id); setFormInitial(null); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
-  function navigate(to: Screen, replace = false) { if (!replace && screen === to && !selectedId) { setMenuOpen(false); return }; const state: AppHistoryState = { escena: true, screen: to }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setScreen(to); setSelectedId(null); setFormInitial(null); setMenuOpen(false); window.scrollTo(0, 0) }
-  function startForm(initial: Concert) { const state: AppHistoryState = { escena: true, screen: 'form', formInitial: initial }; window.history.pushState(state, ''); setFormInitial(initial); setScreen('form'); setMenuOpen(false); window.scrollTo(0, 0) }
-  function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert) }
+  function open(id: string, replace = false) { if (!confirmLeaveForm()) return; const state: AppHistoryState = { escena: true, screen: 'detail', selectedId: id }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setSelectedId(id); setFormInitial(null); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
+  function navigate(to: Screen, replace = false) { if (!confirmLeaveForm()) return; if (!replace && screen === to && !selectedId) { setMenuOpen(false); return }; const state: AppHistoryState = { escena: true, screen: to }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setScreen(to); setSelectedId(null); setFormInitial(null); setMenuOpen(false); window.scrollTo(0, 0) }
+  function startForm(initial: Concert, recoverNewDraft = true) {
+    if (!confirmLeaveForm()) return
+    if (recoverNewDraft && !initial.updatedAt && !initial.title) {
+      try {
+        const draftId = localStorage.getItem('escena-new-concert-draft-id-v1')
+        if (draftId) {
+          const saved = JSON.parse(localStorage.getItem(`escena-concert-draft-${draftId}`) || 'null') as Concert | null
+          if (saved?.id === draftId && saved.details) initial = { ...initial, id: draftId }
+          else localStorage.removeItem('escena-new-concert-draft-id-v1')
+        }
+      } catch { /* Continua amb un formulari nou si la recuperació local no està disponible. */ }
+    }
+    const state: AppHistoryState = { escena: true, screen: 'form', formInitial: initial }
+    formHistoryRef.current = state
+    window.history.pushState(state, '')
+    setFormInitial(initial)
+    setScreen('form')
+    setMenuOpen(false)
+    window.scrollTo(0, 0)
+  }
+  function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert, false) }
   async function save(item: Concert, navigateAfterSave = true) {
     const saved = await saveConcert(item)
+    updateFormDirty(false)
     const previous = concerts.find((existing) => existing.id === saved.id)
     const retained = new Set(saved.details.documents.map((doc) => doc.storagePath))
     for (const doc of previous?.details.documents ?? []) {
@@ -428,6 +494,34 @@ export default function App() {
     if (isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
   }
 
+  async function retryOfflineSync() {
+    if (!online) return
+    await Promise.all([syncOfflineConcerts(), syncOfflineData()])
+    setOfflineSyncStatus(getOfflineSyncStatus())
+    if (cloudConfigured && session) {
+      try { setConcerts(await listConcerts()) } catch { /* Keep the local list visible; queued errors remain in the sync panel. */ }
+    }
+  }
+
+  async function chooseConflictVersion(item: OfflineSyncItem, choice: 'local' | 'server') {
+    try {
+      if (item.kind === 'concert') await resolveOfflineConcertConflict(item.id, choice)
+      else if (item.entity && item.entity !== 'sale') await resolveOfflineDataConflict(item.id, item.entity, choice)
+      if (choice === 'local') await Promise.all([syncOfflineConcerts(), syncOfflineData()])
+      setOfflineSyncStatus(getOfflineSyncStatus())
+      if (cloudConfigured && session) setConcerts(await listConcerts())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No s’ha pogut resoldre el conflicte.')
+      setOfflineSyncStatus(getOfflineSyncStatus())
+    }
+  }
+
+  function discardFailedOfflineData(item: OfflineSyncItem) {
+    if (!item.entity || !window.confirm(`Vols descartar el canvi local de «${item.label}»?`)) return
+    discardOfflineDataChange(item.id, item.entity)
+    setOfflineSyncStatus(getOfflineSyncStatus())
+  }
+
   return <div className={`app-layout ${themeClass(theme)}`}>
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><BrandName /><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">BANDA O ARTISTA</div><button type="button" className={`workspace-name ${workspaceProfileLoading ? 'workspace-name-loading' : ''}`} aria-label={workspaceName ? `Configurar l’espai ${workspaceName}` : 'Configurar l’espai de la banda'} onClick={() => navigate('settings')}><div className="workspace-avatar">{workspaceLogo ? <img src={workspaceLogo} alt="" /> : workspaceProfileLoading ? <Music2 size={18} /> : workspaceName.trim().charAt(0).toUpperCase() || 'B'}</div><span>{workspaceName || (workspaceProfileLoading ? 'Carregant banda…' : 'Configura la banda')}</span><SettingsIcon size={16} /></button>
        <nav className="sidebar-nav" aria-label="Navegació principal"><button className={screen === 'home' ? 'nav-active' : ''} onClick={() => navigate('home')}><House size={19} /> Inici</button><button className={screen === 'list' || screen === 'detail' || screen === 'form' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button><button className={screen === 'treasury' ? 'nav-active' : ''} onClick={() => navigate('treasury')}><Wallet size={19} /> Tresoreria</button><button className={screen === 'merch' ? 'nav-active' : ''} onClick={() => navigate('merch')}><ShoppingBag size={19} /> Marxandatge</button><div className="nav-divider" /><button className={screen === 'people' ? 'nav-active' : ''} onClick={() => navigate('people')}><UsersRound size={19} /> Persones</button><button className={screen === 'materials' ? 'nav-active' : ''} onClick={() => navigate('materials')}><PackageCheck size={19} /> Material</button><button className={screen === 'setlists' ? 'nav-active' : ''} onClick={() => navigate('setlists')}><ListMusic size={19} /> Setlists</button><div className="nav-divider" /><button className={screen === 'assistant' ? 'nav-active' : ''} onClick={() => navigate('assistant')}><Sparkles size={19} /> IA</button></nav>
@@ -436,6 +530,7 @@ export default function App() {
     {menuOpen ? <button className="mobile-overlay" aria-label="Tancar menú" onClick={() => setMenuOpen(false)} /> : null}
       <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'home' ? 'Inici' : screen === 'calendar' ? 'Calendari' : screen === 'assistant' ? 'IA' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : screen === 'treasury' ? 'Tresoreria' : screen === 'merch' ? 'Marxandatge' : screen === 'people' ? 'Persones' : screen === 'materials' ? 'Material' : screen === 'setlists' ? 'Setlists' : screen === 'settings' ? 'Configuració' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? (online ? 'EN LÍNIA' : 'SENSE CONNEXIÓ') : 'DEMO LOCAL'} <span className={`online-dot ${online ? '' : 'offline-dot'}`} /></span></header>
       <div className="content-area">
+        {cloudConfigured && offlineSyncStatus.pending > 0 ? <section className={`offline-sync-panel ${offlineSyncStatus.failed ? 'offline-sync-failed' : ''}`} aria-live="polite"><div className="offline-sync-heading"><div><strong>{offlineSyncStatus.failed ? 'Canvis pendents de sincronitzar' : online ? 'Sincronitzant canvis' : 'Canvis desats en aquest dispositiu'}</strong><small>{offlineSyncStatus.failed ? `${offlineSyncStatus.failed} de ${offlineSyncStatus.pending} canvis necessiten atenció.` : `${offlineSyncStatus.pending} ${offlineSyncStatus.pending === 1 ? 'canvi pendent' : 'canvis pendents'}.`}</small></div>{online ? <button type="button" className="button button-secondary" onClick={() => void retryOfflineSync()}>Torna-ho a provar</button> : null}</div>{offlineSyncStatus.items.slice(0, 5).map((item) => <div className="offline-sync-item" key={item.key}><div><strong>{item.label}</strong>{item.message ? <small>{item.message}</small> : null}</div>{item.conflict && online && (item.kind === 'concert' || item.entity === 'money' || item.entity === 'product' || item.entity === 'resource') ? <div className="offline-conflict-actions"><button type="button" onClick={() => void chooseConflictVersion(item, 'local')}>Conservar els meus canvis</button><button type="button" onClick={() => void chooseConflictVersion(item, 'server')}>Fer servir la versió del servidor</button></div> : item.message && item.kind === 'data' && online ? <div className="offline-conflict-actions"><button type="button" onClick={() => discardFailedOfflineData(item)}>Descartar aquest canvi</button></div> : null}</div>)}{offlineSyncStatus.pending > 5 ? <small className="offline-sync-more">I {offlineSyncStatus.pending - 5} canvis més a la cua.</small> : null}</section> : null}
         {error ? <div className="global-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Tancar avís"><X size={16} /></button></div> : null}
          {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
          {loading ? <div className="content-loading">Carregant concerts…</div> : null}
@@ -449,7 +544,7 @@ export default function App() {
           {screen === 'settings' && labelReady ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} labelAgreement={labelAgreement} onLabelChange={setLabelAgreement} /> : null}
            {screen === 'assistant' && labelReady ? <ConcertAssistant concerts={concerts} workspaceName={workspaceName} labelAgreement={labelAgreement} onWorkspaceNameChange={setWorkspaceName} onThemeChange={(value) => { setTheme(value); document.documentElement.dataset.theme = value }} onCreateDraft={(draft) => startForm(draft)} onUpdateConcert={(concert) => save(concert, false)} onSaveSetlist={createAssistantSetlist} onDeleteConcert={deleteAssistantConcert} onSavePerson={createAssistantPerson} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}
-          {!loading && labelReady && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} labelAgreement={labelAgreement} onSave={save} onCancel={() => window.history.back()} /> : null}
+          {!loading && labelReady && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} labelAgreement={labelAgreement} onDirtyChange={updateFormDirty} onSave={save} onCancel={() => window.history.back()} /> : null}
            {!loading && labelReady && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} labelAgreement={labelAgreement} onBack={() => window.history.back()} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
           <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>

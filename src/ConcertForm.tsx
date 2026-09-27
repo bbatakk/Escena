@@ -3,15 +3,28 @@ import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { listBandDocuments, listResource } from './data'
 import { concertSettlement, createId, formatMoney, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type LabelAgreement, type SetlistTemplate, statusLabels } from './model'
 
+const newConcertDraftKey = 'escena-new-concert-draft-id-v1'
+
 interface Props {
   initial: Concert
   onSave: (concert: Concert) => Promise<void>
   onCancel: () => void
+  onDirtyChange: (dirty: boolean) => void
   labelAgreement: LabelAgreement | null
 }
 
-export default function ConcertForm({ initial, onSave, onCancel, labelAgreement }: Props) {
-  const [concert, setConcert] = useState<Concert>(initial)
+export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, labelAgreement }: Props) {
+  const [initialDraft] = useState<Concert | null>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(`escena-concert-draft-${initial.id}`) || 'null')
+      return saved && typeof saved === 'object' && 'id' in saved && saved.id === initial.id && 'details' in saved && saved.details && typeof saved.details === 'object'
+        ? saved as Concert
+        : null
+    } catch { return null }
+  })
+  const [concert, setConcert] = useState<Concert>(initialDraft || initial)
+  const [draftSaved, setDraftSaved] = useState(Boolean(initialDraft))
+  const dirty = draftSaved || JSON.stringify(concert) !== JSON.stringify(initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [library, setLibrary] = useState<BandDocument[]>([])
@@ -22,6 +35,7 @@ export default function ConcertForm({ initial, onSave, onCancel, labelAgreement 
   const [setlists, setSetlists] = useState<SetlistTemplate[]>([])
   const d = concert.details
   const settlement = concertSettlement(concert, labelAgreement)
+  const draftKey = `escena-concert-draft-${initial.id}`
 
   useEffect(() => {
     let active = true
@@ -29,6 +43,37 @@ export default function ConcertForm({ initial, onSave, onCancel, labelAgreement 
       .catch(() => { if (active) setLibraryError('No s’ha pogut carregar la biblioteca de la banda.') })
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (!initialDraft && JSON.stringify(concert) === JSON.stringify(initial)) return
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(concert))
+        if (!initial.updatedAt && !initial.title) localStorage.setItem(newConcertDraftKey, initial.id)
+        setDraftSaved(true)
+      }
+      catch { setError('No s’ha pogut guardar l’esborrany en aquest dispositiu.') }
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [concert, draftKey, initial, initialDraft])
+
+  useEffect(() => {
+    const changed = draftSaved || JSON.stringify(concert) !== JSON.stringify(initial)
+    if (!changed) return
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warnBeforeLeaving)
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
+  }, [concert, draftSaved, initial])
+
+  useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
+
+  function cancelForm() {
+    if (dirty && !window.confirm('Hi ha canvis desats només com a esborrany. Vols sortir? Podràs recuperar-los en tornar a obrir aquesta fitxa.')) return
+    onDirtyChange(false)
+    clearDraft()
+    setDraftSaved(false)
+    onCancel()
+  }
 
   function addFromLibrary() {
     const selected = library.find((item) => item.id === selectedLibraryId)
@@ -57,12 +102,21 @@ export default function ConcertForm({ initial, onSave, onCancel, labelAgreement 
     setConcert((previous) => ({ ...previous, details: { ...previous.details, management, labelAgreement: management === 'discografica' ? previous.details.management === 'discografica' && previous.details.labelAgreement || labelAgreement || undefined : undefined } }))
   }
 
+  function clearDraft() {
+    try {
+      localStorage.removeItem(draftKey)
+      if (localStorage.getItem(newConcertDraftKey) === initial.id) localStorage.removeItem(newConcertDraftKey)
+    } catch { /* El desat principal ja s’ha completat. */ }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true)
     setError('')
     try {
       await onSave(concert)
+      clearDraft()
+      setDraftSaved(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No s’ha pogut desar el concert. Torna-ho a provar.')
     } finally {
@@ -72,7 +126,7 @@ export default function ConcertForm({ initial, onSave, onCancel, labelAgreement 
 
   return (
     <div className="form-shell">
-      <button type="button" className="text-button back-button" onClick={onCancel}><ArrowLeft size={17} /> Tornar als concerts</button>
+      <button type="button" className="text-button back-button" onClick={cancelForm}><ArrowLeft size={17} /> Tornar als concerts</button>
       <div className="page-heading form-heading">
         <div><span className="eyebrow">FITXA DE CONCERT</span><h1>{initial.title ? 'Editar concert' : 'Nou concert'}</h1></div>
         <p>Omple només la informació que tinguis. La resta pot esperar.</p>
@@ -179,7 +233,7 @@ export default function ConcertForm({ initial, onSave, onCancel, labelAgreement 
               <div className="fields two-col"><label className="field">Catxet cobrat (€) <input type="number" min="0" step="0.01" value={concert.feePaid} onChange={(e) => setField('feePaid', Number(e.target.value))} /></label><label className="field">Despeses (€) <input type="number" min="0" step="0.01" value={d.expenses} onChange={(e) => setDetail('expenses', Number(e.target.value))} /></label><label className="field field-span">Notes i incidències <textarea rows={3} value={d.notes} onChange={(e) => setDetail('notes', e.target.value)} /></label></div>
            </section>
         </div>
-        <div className="form-actions">{error ? <p className="form-error" role="alert">{error}</p> : null}<button type="button" className="button button-secondary" onClick={onCancel}>Cancel·lar</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? 'Desant…' : 'Desar concert'}</button></div>
+        <div className="form-actions">{error ? <p className="form-error" role="alert">{error}</p> : null}{draftSaved ? <small className="draft-saved-note" role="status">Esborrany desat en aquest dispositiu</small> : null}{initialDraft ? <small className="draft-recovered-note" role="status">Hem recuperat un esborrany anterior.</small> : null}<button type="button" className="button button-secondary" onClick={cancelForm}>Cancel·lar</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? 'Desant…' : 'Desar concert'}</button></div>
       </form>
     </div>
   )

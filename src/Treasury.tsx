@@ -18,7 +18,7 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { let active = true; Promise.all([listMoneyMovements(), listMerchSales()]).then(([items, sales]) => { if (active) { setMovements(items); setMerchSales(sales) } }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els moviments.') }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [])
+  useEffect(() => { let active = true; const load = () => { void Promise.all([listMoneyMovements(), listMerchSales()]).then(([items, sales]) => { if (active) { setMovements(items); setMerchSales(sales) } }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els moviments.') }).finally(() => { if (active) setLoading(false) }) }; load(); window.addEventListener('escena:offline-queue-change', load); return () => { active = false; window.removeEventListener('escena:offline-queue-change', load) } }, [])
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

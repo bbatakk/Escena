@@ -11,7 +11,7 @@ export default function BandPeople() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => { let active = true; listResource<BandPerson>('band_people').then((items) => { if (active) setPeople(items) }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar les persones.') }); return () => { active = false } }, [])
+  useEffect(() => { let active = true; const load = () => void listResource<BandPerson>('band_people').then((items) => { if (active) setPeople(items) }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'No s’han pogut carregar les persones.') }); load(); window.addEventListener('escena:offline-queue-change', load); return () => { active = false; window.removeEventListener('escena:offline-queue-change', load) } }, [])
   async function add(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { const saved = await saveResource('band_people', { id: createId(), ...person, active: true }); setPeople((items) => [...items, saved]); setPerson({ name: '', kind: 'musica', phone: '', email: '' }) } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut desar la persona.') } finally { setBusy(false) } }
   async function archive(item: BandPerson) { setBusy(true); setError(''); try { await saveResource('band_people', { ...item, active: false }); setPeople((items) => items.filter((entry) => entry.id !== item.id)) } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut arxivar la persona.') } finally { setBusy(false) } }
   const team = people.filter((item) => item.kind !== 'contacte')

@@ -17,8 +17,8 @@ Accés amb Supabase quan està configurat; demo local si no. Llista i calendari;
 
 ## Següents lliurables
 
-1. Substituir els imports-resum de la fitxa pels càlculs de tresoreria i vendes, sense duplicar ingressos.
-2. Ampliar la PWA offline als documents, tresoreria i marxandatge; resoldre conflictes simultanis al mateix element.
+1. Retirar gradualment els camps de tancament antics quan totes les bandes facin servir els moviments reals. La fitxa ja calcula un balanç sense duplicar catxet, vendes detallades ni moviments manuals.
+2. Ampliar la PWA offline als documents i reforçar la resolució de conflictes concurrents. Ja es mostren els canvis pendents/error, i la cua inclou concerts, tresoreria, marxandatge i recursos de banda.
 3. Comptes individuals, invitacions i permisos si l'ús real ho justifica.
 
 La migració 007 deixa preparats `role` a `band_members` i `band_invitations`, però la UI continua deliberadament amb compte compartit. No s'han d'activar permisos parcials sense dissenyar abans el flux d'invitació, acceptació i recuperació de compte.

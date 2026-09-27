@@ -4,6 +4,7 @@ import { cloudConfigured, exportBackup, importBackup, removeBandLogo, saveBandLa
 import { commissionRate, validateLabelAgreement, type LabelAgreement } from './model'
 
 export type ThemeId = 'classic' | 'live-stage' | 'club' | 'paper'
+interface BackupPreview { backup: AppBackup; fileName: string }
 
 const themes: Array<{ id: ThemeId; name: string; description: string; className: string; colors: string[] }> = [
   { id: 'classic', name: 'Clàssic Escena', description: 'Blau net i familiar, pensat per treballar cada dia.', className: 'theme-classic', colors: ['#182846', '#3c5add', '#f5f7fb'] },
@@ -99,6 +100,7 @@ function LabelSettings({ agreement, onSaved }: { agreement: LabelAgreement | nul
 export default function Settings({ theme, onThemeChange, onImported, workspaceName, workspaceLogo, onWorkspaceNameChange, onWorkspaceLogoChange, labelAgreement, onLabelChange }: { theme: ThemeId; onThemeChange: (value: ThemeId) => void; onImported: () => void; workspaceName: string; workspaceLogo?: string; onWorkspaceNameChange: (name: string) => void; onWorkspaceLogoChange: (logo?: string) => void; labelAgreement: LabelAgreement | null; onLabelChange: (label: LabelAgreement | null) => void }) {
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
+  const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null)
 
   async function downloadBackup() {
     setBackupBusy(true)
@@ -121,17 +123,24 @@ export default function Settings({ theme, onThemeChange, onImported, workspaceNa
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+    setBackupMessage('')
+    setBackupPreview(null)
+    try {
+      if (file.size > 25 * 1024 * 1024) throw new Error('El backup supera el límit de 25 MB.')
+      const parsed: unknown = JSON.parse(await file.text())
+      if (!validateBackup(parsed)) throw new Error('El fitxer no és un backup d’Escena vàlid.')
+      setBackupPreview({ backup: parsed, fileName: file.name })
+    } catch (cause) { setBackupMessage(cause instanceof Error ? cause.message : 'No s’ha pogut importar el backup.') }
+  }
+
+  async function applyBackup() {
+    if (!backupPreview) return
     setBackupBusy(true)
     setBackupMessage('')
     try {
-      const parsed: unknown = JSON.parse(await file.text())
-      if (!validateBackup(parsed)) throw new Error('El fitxer no és un backup d’Escena vàlid.')
-      const confirmation = cloudConfigured
-        ? 'Es fusionaran les dades: els registres s’afegiran o actualitzaran; les vendes ja presents no es duplicaran. La resta de dades actuals es conservaran. Vols continuar?'
-        : 'El backup substituirà les dades locals d’aquest navegador. Vols continuar?'
-      if (!window.confirm(confirmation)) return
-      await importBackup(parsed as AppBackup)
+      await importBackup(backupPreview.backup)
       setBackupMessage('Backup importat. Recarregant les dades…')
+      setBackupPreview(null)
       onImported()
     } catch (cause) { setBackupMessage(cause instanceof Error ? cause.message : 'No s’ha pogut importar el backup.') }
     finally { setBackupBusy(false) }
@@ -142,6 +151,6 @@ export default function Settings({ theme, onThemeChange, onImported, workspaceNa
     <WorkspaceSettings name={workspaceName} logoUrl={workspaceLogo} onSaved={onWorkspaceNameChange} onLogoChange={onWorkspaceLogoChange} />
     <LabelSettings agreement={labelAgreement} onSaved={onLabelChange} />
     <section className="settings-card"><div className="settings-card-heading"><span className="section-index"><Palette size={16} /></span><div><h2>Disseny de la web</h2><p>El canvi es desa en aquest navegador i s’aplica a totes les pantalles.</p></div></div><div className="theme-grid">{themes.map((item) => <button type="button" key={item.id} className={`theme-option ${theme === item.id ? 'theme-option-selected' : ''} ${item.className}`} onClick={() => onThemeChange(item.id)}><span className="theme-preview"><span className="theme-preview-sidebar" /><span className="theme-preview-main"><span /><span /><span /></span></span><span className="theme-option-copy"><strong>{item.name}</strong><small>{item.description}</small></span><span className="theme-swatches">{item.colors.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span>{theme === item.id ? <span className="theme-check"><Check size={14} /></span> : null}</button>)}</div></section>
-    <section className="settings-card backup-card"><div className="settings-card-heading"><span className="section-index"><Download size={16} /></span><div><h2>Backup de l’espai</h2><p>Exporta concerts, documents, tresoreria, marxandatge i catàlegs en un fitxer JSON.</p></div></div><div className="backup-actions"><button type="button" className="button button-secondary" disabled={backupBusy} onClick={() => void downloadBackup()}><Download size={15} /> Exportar backup</button><label className="button button-primary"><Upload size={15} /> Importar backup<input type="file" accept="application/json,.json" disabled={backupBusy} onChange={(event) => void readBackup(event)} /></label></div>{backupMessage ? <p className="backup-message" role="status">{backupMessage}</p> : null}<small className="backup-note">{cloudConfigured ? 'Amb Supabase, la importació actualitza o afegeix registres a la banda actual i conserva la resta. No substitueix fitxers físics ni credencials.' : 'En mode local, la importació substitueix les dades d’aquest navegador. No inclou fitxers físics ni credencials.'}</small></section>
+    <section className="settings-card backup-card"><div className="settings-card-heading"><span className="section-index"><Download size={16} /></span><div><h2>Backup de l’espai</h2><p>Exporta concerts, documents, tresoreria, marxandatge i catàlegs en un fitxer JSON.</p></div></div><div className="backup-actions"><button type="button" className="button button-secondary" disabled={backupBusy} onClick={() => void downloadBackup()}><Download size={15} /> Exportar backup</button><label className="button button-primary"><Upload size={15} /> Importar backup<input type="file" accept="application/json,.json" disabled={backupBusy} onChange={(event) => void readBackup(event)} /></label></div>{backupPreview ? <div className="backup-preview" role="region" aria-label="Previsualització del backup"><div><span className="eyebrow">REVISIÓ ABANS D’IMPORTAR</span><strong>{backupPreview.fileName}</strong><p>{cloudConfigured ? 'Les dades s’afegiran o actualitzaran a l’espai compartit. Els registres absents del fitxer no s’eliminaran.' : 'Les dades actuals d’aquest navegador se substituiran per les del backup.'}</p></div><ul>{[['Concerts', backupPreview.backup.concerts.length], ['Documents', backupPreview.backup.library.length], ['Moviments', backupPreview.backup.money.length], ['Productes', backupPreview.backup.merchProducts.length], ['Vendes', backupPreview.backup.merchSales.length], ['Persones', backupPreview.backup.people.length], ['Material', backupPreview.backup.materials.length], ['Setlists', backupPreview.backup.setlists.length]].map(([label, count]) => <li key={label}><span>{label}</span><strong>{count}</strong></li>)}</ul><div className="backup-preview-actions"><button type="button" className="button button-secondary" disabled={backupBusy} onClick={() => setBackupPreview(null)}>Cancel·lar</button><button type="button" className="button button-primary" disabled={backupBusy} onClick={() => void applyBackup()}>{backupBusy ? 'Important…' : 'Confirmar importació'}</button></div></div> : null}{backupMessage ? <p className="backup-message" role="status">{backupMessage}</p> : null}<small className="backup-note">{cloudConfigured ? 'Amb Supabase, la importació actualitza o afegeix registres a la banda actual i conserva la resta. No substitueix fitxers físics ni credencials.' : 'En mode local, la importació substitueix les dades d’aquest navegador. No inclou fitxers físics ni credencials.'}</small></section>
   </div>
 }
