@@ -168,3 +168,56 @@
 .theme-club.app-layout .quick-product-top>div>span,.theme-club.app-layout .quick-sale-total strong,.theme-club.app-layout .quick-sale-history strong{color:#b7f34a}
 .theme-club.app-layout .quick-sale-history span,.theme-club.app-layout .quick-sale-heading h2{color:#f4f7f1}
 .theme-club.app-layout .merch-sale-search,.theme-club.app-layout .quick-sale-search{background:#242f3d;border-color:#4a5a69;color:#c0ccca}
+
+/* Club nocturn: aplica la mateixa jerarquia fosca a totes les pantalles, no només a la fitxa. */
+.theme-club.app-layout{--muted:#bdc9ca;--line:#465667;--card:#242f3d;color:#edf2ec}
+.theme-club.app-layout :where(h1,h2,h3,h4,p,span,strong,small,label,li,summary,dt,dd,th,td,output){color:#edf2ec}
+.theme-club.app-layout :where(.page-heading p,.section-heading p,.settings-card-heading p,.aside-card>p,.home-empty-note,.home-pending-copy small,.home-upcoming-copy small,.concert-card-info>p,.summary-note,.backup-note,.assistant-privacy,.assistant-form-footer>small,.money-row-main small,.merch-product-main small,.merch-product-stats small,.quick-product-stock,.quick-sale-product small,.quick-sale-total small,.quick-sale-search,.search-box,.search-box input::placeholder,.field input::placeholder,.field textarea::placeholder,.repeat-row input::placeholder,.library-picker small,.resource-row small,.document-item small,.document-file,.attached-file-name,.calendar-agenda p,.concert-year-heading span,.calendar-number,.weekday,.stage-setlist-header p,.merch-sale-header p,.merch-sale-summary span,.material-summary span,.label-example,.label-concert-note,.size-editor-heading small,.size-stock-total,.treasury-merch-note){color:#c0ccca}
+.theme-club.app-layout :where(.eyebrow,.section-index,.list-label,.concert-quick-actions-label,.concert-quick-actions .concert-quick-action-icon,.calendar-agenda .eyebrow,.money-list-head .eyebrow,.merch-summary .eyebrow,.library-content>.eyebrow,.library-archived>.eyebrow,.resource-picker>span,.library-picker>span,.assistant-answer>.eyebrow,.assistant-draft>.eyebrow){color:#b7f34a}
+
+.theme-club.app-layout :where(.topbar,.concert-card,.calendar-panel,.calendar-day,.calendar-agenda button,.pending-panel,.detail-section,.aside-card,.form-card,.repeat-entry,.resource-group,.library-entry,.library-edit,.money-row,.money-summary>div,.merch-summary>div,.settings-card,.theme-option,.concert-sales,.concert-sales-summary,.concert-year-archive,.home-stats>button,.home-stats>div,.home-panel,.home-pending-list>button,.home-upcoming-list>button,.search-box,.year-filter select,.library-picker,.resource-picker,.size-editor,.assistant-draft,.assistant-answer,.assistant-action-preview,.assistant-setup-note,.treasury-merch-note,.label-concert-summary){background-color:#242f3d;border-color:#465667;color:#edf2ec}
+.theme-club.app-layout :where(.topbar,.form-card,.detail-section,.aside-card,.pending-panel,.concert-card,.calendar-panel,.resource-group,.library-entry,.money-row,.settings-card,.home-panel,.home-stats>button,.home-stats>div){box-shadow:0 0 0 1px #354352,0 10px 28px #05080d44}
+.theme-club.app-layout :where(.concert-card:hover,.home-pending-list>button:hover,.home-upcoming-list>button:hover,.calendar-agenda button:hover){background-color:#2c3948;border-color:#617488}
+.theme-club.app-layout :where(.concert-card h3,.resource-row strong,.library-entry-main>strong,.money-row-main strong,.merch-product-main strong,.concert-sales-heading h3,.size-editor-heading strong,.assistant-draft>strong,.assistant-action-preview>strong,.assistant-change>strong,.home-panel-heading h2,.concert-year-heading strong,.concert-year-archive summary strong){color:#f4f7f1}
+
+.theme-club.app-layout :where(.button-light,.button-secondary,.money-kind button,.calendar-controls .today-button,.setlist-stage-button,.library-picker select,.resource-picker select,.concert-sale-form input,.concert-sale-form select,.size-editor-row input,.quick-sale-sizes button,.catalog-size-list span,.selected-people span,.material-category-tag){background:#354352;border-color:#526579;color:#f4f7f1}
+.theme-club.app-layout :where(.button-light:hover,.button-secondary:hover,.money-kind button:hover,.calendar-controls .today-button:hover,.setlist-stage-button:hover,.quick-sale-sizes button:hover:not(:disabled)){background:#405264;border-color:#b7f34a;color:#fff}
+.theme-club.app-layout :where(.field input,.field textarea,.field select,.repeat-row input,.repeat-row select,.concert-sale-form input,.concert-sale-form select,.size-editor-row input,.search-box input,.quick-sale-search input){background:#1c2430;border-color:#526579;color:#f4f7f1}
+.theme-club.app-layout :where(.field input:focus,.field textarea:focus,.field select:focus,.repeat-row input:focus,.repeat-row select:focus,.concert-sale-form input:focus,.concert-sale-form select:focus,.size-editor-row input:focus,.search-box:focus-within,.quick-sale-search:focus-within){border-color:#b7f34a;box-shadow:0 0 0 3px #b7f34a2e}
+.theme-club.app-layout :where(.field input::placeholder,.field textarea::placeholder,.repeat-row input::placeholder,.search-box input::placeholder,.quick-sale-search input::placeholder){color:#aebcbe}
+
+.theme-club.app-layout :where(.calendar-day-outside,.calendar-event,.date-stamp,.home-stat-icon,.home-upcoming-date,.home-pending-count,.section-index,.document-icon,.product-icon,.money-icon,.assistant-mark,.library-picker,.resource-picker,.assistant-draft,.assistant-answer,.assistant-action-preview,.concert-sales,.size-editor,.catalog-size-list span,.selected-people span,.material-category-tag){background-color:#303e4d;color:#edf2ec}
+.theme-club.app-layout :where(.calendar-today,.date-stamp){background:#b7f34a;color:#11151d}
+.theme-club.app-layout :where(.calendar-event,.calendar-agenda button,.overview-strip,.overview-next,.overview-stat,.home-next-gig,.stage-setlist){background:#111923;color:#edf2ec}
+.theme-club.app-layout :where(.home-next-date,.home-next-empty .home-next-date){background:#b7f34a;color:#11151d}
+.theme-club.app-layout :where(.overview-next .eyebrow,.overview-stat .eyebrow,.home-next-info>.eyebrow){color:#d5e5a5}
+.theme-club.app-layout :where(.overview-next small,.overview-stat small,.home-next-info p){color:#d0dcda}
+
+.theme-club.app-layout :where(.status,.pending-count,.count-pill){background:#354352;color:#f4f7f1}
+.theme-club.app-layout .status-reservat{background:#57472f;color:#ffe0a6}
+.theme-club.app-layout .status-en_converses{background:#354352;color:#d6dfe1}
+.theme-club.app-layout .status-realitzat{background:#294536;color:#c9f0d7}
+.theme-club.app-layout [class~="status-cancel·lat"]{background:#54363a;color:#ffd0d2}
+.theme-club.app-layout :where(.positive-money,.concert-sales-heading>strong,.concert-sales-summary>div>strong,.merch-product-stats strong,.money-summary .positive-money){color:#8fe0b4}
+.theme-club.app-layout :where(.negative-money,.danger-text,.delete-link,.money-summary .negative-money){color:#ffafb5}
+
+.theme-club.app-layout :where(.demo-banner,.global-error,.auth-message,.form-error){background:#3c3030;border-color:#80524c;color:#ffd0c6}
+.theme-club.app-layout :where(.assistant-setup-note,.assistant-action-notice){background:#293d34;border-color:#456a55;color:#d6f2df}
+.theme-club.app-layout .assistant-action-preview :where(p,li,.assistant-change>p){color:#c0ccca}
+.theme-club.app-layout :where(.treasury-merch-note,.label-concert-summary){background:#273748;border-color:#4b6074;color:#d7e3e7}
+.theme-club.app-layout :where(.backup-message,.library-error,.form-error){color:#ffb7ad}
+
+/* The stage setlist intentionally keeps its readable paper sheet; theme cards keep their own miniature palettes. */
+.theme-club.app-layout .stage-paper{background:#f5eedf;color:#273753}
+.theme-club.app-layout .stage-paper p,.theme-club.app-layout .stage-list-song p{color:#273753}
+.theme-club.app-layout .stage-list-song span{color:#8d573e}
+.theme-club.app-layout .theme-preview-main span{color:#edf2ec}
+.theme-club.app-layout .theme-preview-main span:first-child{color:#11151d}
+.theme-club.app-layout :where(button,.icon-button,.today-button,.calendar-controls button){color:#edf2ec}
+.theme-club.app-layout :where(.icon-button:hover,.close-menu:hover,.menu-trigger:hover){background:#354352;color:#b7f34a}
+.theme-club.app-layout :where(a,.text-button,.add-button,.document-upload,.address-link,.aside-contact,.inline-link,.library-links a){color:#b7f34a}
+.theme-club.app-layout :where(.home-next-date span,.home-next-date small,.home-next-date strong,.home-next-empty .home-next-date svg){color:#11151d}
+.theme-club.app-layout :where(.money-icon.ingres,.money-icon.despesa,.home-pending-icon){background:#354352;color:#b7f34a}
+.theme-club.app-layout :where(.account-avatar,.workspace-avatar){background:#b7f34a;color:#11151d}
+.theme-club.app-layout .sidebar-account :where(strong,span){color:#edf2ec}
+.theme-club.app-layout .sidebar-account span{color:#c0ccca}
