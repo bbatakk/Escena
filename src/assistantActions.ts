@@ -18,7 +18,7 @@ export interface AppAction { section: Section; mode: Mode; id?: string; before?:
 
 export const sectionFields: Record<Section, readonly string[]> = {
   people: ['name', 'kind', 'phone', 'email'], materials: ['name', 'category'], setlists: ['name', 'songs'], documents: ['name', 'url'],
-  money: ['kind', 'amount', 'date', 'category', 'note', 'concertId'], products: ['name', 'price', 'stock', 'sizes'],
+  money: ['kind', 'amount', 'date', 'category', 'note', 'concertId', 'paymentMethod'], products: ['name', 'price', 'stock', 'sizes'],
   sales: ['concertId', 'productId', 'quantity', 'size', 'note'], workspace: ['name'], theme: ['theme'],
 }
 const allowedModes: Record<Section, readonly Mode[]> = {
@@ -27,7 +27,7 @@ const allowedModes: Record<Section, readonly Mode[]> = {
 }
 export const sectionLabels: Record<Section, string> = { people: 'Persones', materials: 'Material', setlists: 'Setlists', documents: 'Documents', money: 'Tresoreria', products: 'Marxandatge', sales: 'Venda de marxandatge', workspace: 'Nom de la banda', theme: 'Tema visual' }
 export const modeLabels: Record<Mode, string> = { create: 'Crear', update: 'Editar', archive: 'Arxivar', delete: 'Eliminar' }
-export const actionFieldLabels: Record<string, string> = { name: 'Nom', kind: 'Tipus', phone: 'Telèfon', email: 'Correu', category: 'Categoria', songs: 'Cançons', url: 'Enllaç', amount: 'Import', date: 'Data', note: 'Nota', concertId: 'Concert', price: 'Preu', stock: 'Estoc', sizes: 'Talles', productId: 'Producte', quantity: 'Unitats', size: 'Talla', theme: 'Tema' }
+export const actionFieldLabels: Record<string, string> = { name: 'Nom', kind: 'Tipus', phone: 'Telèfon', email: 'Correu', category: 'Categoria', songs: 'Cançons', url: 'Enllaç', amount: 'Import', date: 'Data', note: 'Nota', concertId: 'Concert', paymentMethod: 'Compte bancari o metàl·lic', price: 'Preu', stock: 'Estoc', sizes: 'Talles', productId: 'Producte', quantity: 'Unitats', size: 'Talla', theme: 'Tema' }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const str = (value: unknown, max = 200): value is string => typeof value === 'string' && value.length <= max
@@ -52,7 +52,7 @@ function validate(section: Section, fields: Record<string, unknown>, context: Ac
   } else if (section === 'documents') {
     if (!str(fields.url, 2048) || (fields.url && !/^https?:\/\/[^\s]+$/i.test(String(fields.url)))) throw new Error('L’enllaç del document ha de ser HTTP o HTTPS.')
   } else if (section === 'money') {
-    if (!['ingres', 'despesa'].includes(String(fields.kind)) || !money(fields.amount) || fields.amount === 0 || !date(fields.date) || !str(fields.category, 120) || !str(fields.note, 1000) || (fields.concertId && !context.concerts.some((item) => item.id === fields.concertId))) throw new Error('El moviment necessita tipus, import positiu, data vàlida i un concert existent si s’indica.')
+    if (!['ingres', 'despesa'].includes(String(fields.kind)) || !money(fields.amount) || fields.amount === 0 || !date(fields.date) || !str(fields.category, 120) || !str(fields.note, 1000) || !['bank', 'cash'].includes(String(fields.paymentMethod)) || (fields.concertId && !context.concerts.some((item) => item.id === fields.concertId))) throw new Error('El moviment necessita tipus, import positiu, compte, data vàlida i un concert existent si s’indica.')
   } else if (section === 'products') {
     const sizes = fields.sizes
     if (!money(fields.price) || !Number.isInteger(fields.stock) || (fields.stock as number) < 0 || !Array.isArray(sizes) || sizes.length > 30 || sizes.some((size: unknown) => !isRecord(size) || !str(size.name, 80) || !size.name.trim() || !Number.isInteger(size.stock) || (size.stock as number) < 0)) throw new Error('El producte necessita preu i estoc vàlids.')
@@ -97,11 +97,11 @@ export function parseAppActions(value: unknown, context: ActionContext): AppActi
     if (!isRecord(raw.fields) || !Object.keys(raw.fields).length || Object.keys(raw.fields).some((key) => !sectionFields[section].includes(key))) throw new Error(`Hi ha camps no permesos a ${sectionLabels[section]}.`)
     const defaults: Record<Section, Record<string, unknown>> = {
       people: { name: '', kind: '', phone: '', email: '' }, materials: { name: '', category: '' }, setlists: { name: '', songs: [] }, documents: { name: '', url: '' },
-      money: { kind: '', amount: 0, date: '', category: '', note: '', concertId: '' }, products: { name: '', price: undefined, stock: undefined, sizes: [] },
+      money: { kind: '', amount: 0, date: '', category: '', note: '', concertId: '', paymentMethod: 'bank' }, products: { name: '', price: undefined, stock: undefined, sizes: [] },
       sales: { concertId: '', productId: '', quantity: 0, size: '', note: '' }, workspace: { name: '' }, theme: { theme: '' },
     }
     const fields = raw.fields as Record<string, unknown>
-    const after = { ...(original || defaults[section]), ...fields }
+    const after: Record<string, unknown> = { ...(section === 'money' ? { paymentMethod: 'bank' } : {}), ...(original || defaults[section]), ...fields }
     validate(section, after, context)
     if (section === 'money' && mode === 'create' && !after.category) after.category = after.kind === 'ingres' ? 'Altres ingressos' : 'Altres despeses'
     if (mode === 'update' && ['people', 'materials', 'setlists', 'documents', 'products'].includes(section) && typeof after.name === 'string' && list.some((item) => item.id !== original?.id && typeof item.name === 'string' && keyName(item.name) === keyName(after.name as string))) throw new Error(`«${after.name}» ja existeix a ${sectionLabels[section]}.`)

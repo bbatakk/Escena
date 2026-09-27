@@ -68,6 +68,7 @@ export interface BandDocument {
 }
 
 export type MoneyMovementKind = 'ingres' | 'despesa'
+export type MoneyMovementPaymentMethod = 'bank' | 'cash'
 
 export interface MoneyMovement {
   id: string
@@ -77,8 +78,16 @@ export interface MoneyMovement {
   date: string
   category: string
   note: string
+  paymentMethod?: MoneyMovementPaymentMethod
   sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total' | 'concert_expense'
   sourceId?: string
+}
+
+export function moneyMovementBalance(movements: MoneyMovement[], paymentMethod?: MoneyMovementPaymentMethod): number {
+  return movements.reduce((balance, movement) => {
+    if (paymentMethod && (movement.paymentMethod || 'bank') !== paymentMethod) return balance
+    return balance + (movement.kind === 'ingres' ? movement.amount : -movement.amount)
+  }, 0)
 }
 
 export interface MerchProduct {
@@ -185,12 +194,12 @@ export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgre
     const settlement = concertSettlement(concert, label)
     if (!settlement.unresolved && settlement.netPaid > 0) generated.push({
       id: `automatic:concert-fee:${concert.id}`, sourceType: 'concert_fee', sourceId: concert.id,
-      concertId: concert.id, kind: 'ingres', amount: settlement.netPaid,
+      concertId: concert.id, kind: 'ingres', amount: settlement.netPaid, paymentMethod: 'bank',
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
     })
     if (concert.details.expenses > 0) generated.push({
       id: `automatic:concert-expense:${concert.id}`, sourceType: 'concert_expense', sourceId: concert.id,
-      concertId: concert.id, kind: 'despesa', amount: concert.details.expenses,
+      concertId: concert.id, kind: 'despesa', amount: concert.details.expenses, paymentMethod: 'bank',
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Despeses del concert', note: `Generat automàticament · ${concert.title}`,
     })
   }
@@ -201,7 +210,7 @@ export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgre
     const concertSales = sales.filter((sale) => sale.concertId === concertId)
     generated.push({
       id: `automatic:merch-total:${concertId}`, sourceType: 'merch_total', sourceId: concertId,
-      concertId, kind: 'ingres', amount: merchTotal, date: today, category: 'Marxandatge',
+      concertId, kind: 'ingres', amount: merchTotal, paymentMethod: 'bank', date: today, category: 'Marxandatge',
       note: `Generat automàticament · ${concertSales.length ? `${concertSales.reduce((sum, sale) => sum + sale.quantity, 0)} unitats venudes` : 'Resum antic'} · ${concert?.title || 'Concert'}`,
     })
   }

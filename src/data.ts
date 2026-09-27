@@ -79,7 +79,7 @@ export function validateBackup(value: unknown): value is AppBackup {
     && (backup.labelAgreement === undefined || validLabel(backup.labelAgreement))
     && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && typeof item.title === 'string' && isDate(item.date) && ['en_converses', 'reservat', 'confirmat', 'realitzat', 'cancel·lat'].includes(String(item.status)) && nonNegative(item.feeAmount) && nonNegative(item.feePaid) && isRecord(item.details) && Array.isArray(item.details.documents) && item.details.documents.every(validDocument) && Array.isArray(item.details.materials) && item.details.materials.every(validConcertMaterial) && (item.details.schedule === undefined || (Array.isArray(item.details.schedule) && item.details.schedule.every(validScheduleItem))) && (item.details.personIds === undefined || (Array.isArray(item.details.personIds) && item.details.personIds.every((id) => typeof id === 'string'))))
     && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string' && (item.archived === undefined || typeof item.archived === 'boolean') && (item.storagePath === undefined || typeof item.storagePath === 'string') && (item.fileName === undefined || typeof item.fileName === 'string'))
-    && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && nonNegative(item.amount) && isDate(item.date) && (item.category === undefined || typeof item.category === 'string') && (item.note === undefined || typeof item.note === 'string') && (item.concertId === undefined || typeof item.concertId === 'string'))
+    && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && nonNegative(item.amount) && isDate(item.date) && (item.category === undefined || typeof item.category === 'string') && (item.note === undefined || typeof item.note === 'string') && (item.concertId === undefined || typeof item.concertId === 'string') && (item.paymentMethod === undefined || item.paymentMethod === 'bank' || item.paymentMethod === 'cash'))
     && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && nonNegative(item.price) && Number.isSafeInteger(item.stock) && nonNegative(item.stock) && (item.active === undefined || typeof item.active === 'boolean') && item.imageUrl === undefined && (item.imageDataUrl === undefined || (typeof item.imageDataUrl === 'string' && /^data:image\/(?:webp|png|jpeg);base64,/.test(item.imageDataUrl) && item.imageDataUrl.length <= 7 * 1024 * 1024)) && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && Number.isSafeInteger(size.stock) && nonNegative(size.stock)))))
     && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && nonNegative(item.unitPrice) && (item.note === undefined || typeof item.note === 'string') && (item.size === undefined || typeof item.size === 'string'))
     && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean'))
@@ -212,7 +212,7 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 export function importLocalBackup(backup: AppBackup): void {
   localStorage.setItem(demoKey, JSON.stringify(backup.concerts.map(normalizeConcert)))
   localStorage.setItem(libraryKey, JSON.stringify(backup.library.map((item) => ({ ...item, archived: item.archived ?? false }))))
-  localStorage.setItem(moneyKey, JSON.stringify(backup.money.map((item) => ({ ...item, category: item.category || '', note: item.note || '' }))))
+  localStorage.setItem(moneyKey, JSON.stringify(backup.money.map((item) => ({ ...item, category: item.category || '', note: item.note || '', paymentMethod: item.paymentMethod === 'cash' ? 'cash' : 'bank' }))))
   localStorage.setItem(merchProductsKey, JSON.stringify(backup.merchProducts.map((item) => ({ ...item, active: item.active ?? true, imagePath: undefined, imageUrl: item.imageDataUrl ? undefined : item.imageUrl }))))
   localStorage.setItem(merchSalesKey, JSON.stringify(backup.merchSales.map((item) => ({ ...item, note: item.note || '' }))))
   localStorage.setItem(peopleKey, JSON.stringify(backup.people.map((item) => ({ ...item, active: item.active ?? true }))))
@@ -392,7 +392,7 @@ function queueData(entity: OfflineDataEntity, action: 'save' | 'delete', payload
 
 function canonicalOfflineValue(entity: OfflineDataEntity, value: unknown, table?: ResourceTable): unknown {
   if (!isRecord(value)) return value ?? null
-  if (entity === 'money') return { id: value.id, concertId: value.concertId || undefined, kind: value.kind, amount: Number(value.amount), date: value.date, category: value.category || '', note: value.note || '' }
+  if (entity === 'money') return { id: value.id, concertId: value.concertId || undefined, kind: value.kind, amount: Number(value.amount), date: value.date, category: value.category || '', note: value.note || '', paymentMethod: value.paymentMethod === 'cash' ? 'cash' : 'bank' }
   if (entity === 'product') return { id: value.id, name: value.name, price: Number(value.price), stock: Number(value.stock), active: value.active, sizes: value.sizes || [] }
   if (entity === 'resource') {
     const resource = value.value && isRecord(value.value) ? value.value : value
@@ -412,7 +412,7 @@ async function ensureNoOfflineDataConflict(operation: OfflineDataOperation): Pro
   if (error) throw error
   let remote: unknown = null
   if (data) {
-    if (operation.entity === 'money') remote = canonicalOfflineValue('money', { id: data.id, concertId: data.concert_id || undefined, kind: data.kind, amount: Number(data.amount), date: data.date, category: data.category, note: data.note })
+    if (operation.entity === 'money') remote = canonicalOfflineValue('money', { id: data.id, concertId: data.concert_id || undefined, kind: data.kind, amount: Number(data.amount), date: data.date, category: data.category, note: data.note, paymentMethod: data.payment_method })
     else if (operation.entity === 'product') remote = canonicalOfflineValue('product', fromMerchProduct(data as unknown as MerchProductRow))
     else remote = canonicalOfflineValue('resource', data, (operation.payload as { table: ResourceTable }).table)
   }
@@ -430,7 +430,7 @@ async function fetchOfflineDataVersion(operation: OfflineDataOperation): Promise
   const { data, error } = await (supabase as any).from(table).select('*').eq('id', operation.id).maybeSingle() as { data: Record<string, unknown> | null; error: Error | null }
   if (error) throw error
   if (!data) return null
-  if (operation.entity === 'money') return canonicalOfflineValue('money', { id: data.id, concertId: data.concert_id || undefined, kind: data.kind, amount: Number(data.amount), date: data.date, category: data.category, note: data.note })
+  if (operation.entity === 'money') return canonicalOfflineValue('money', { id: data.id, concertId: data.concert_id || undefined, kind: data.kind, amount: Number(data.amount), date: data.date, category: data.category, note: data.note, paymentMethod: data.payment_method })
   if (operation.entity === 'product') return canonicalOfflineValue('product', fromMerchProduct(data as unknown as MerchProductRow))
   return canonicalOfflineValue('resource', data, (operation.payload as { table: ResourceTable }).table)
 }
@@ -873,8 +873,8 @@ export async function uploadBandDocument(document: BandDocument, file: File): Pr
   catch (error) { await removeConcertDocumentFile(path).catch(() => {}); throw error }
 }
 
-interface MoneyRow { id: string; concert_id: string | null; kind: MoneyMovement['kind']; amount: number; date: string; category: string; note: string; source_type?: MoneyMovement['sourceType'] | null; source_id?: string | null }
-function fromMoneyRow(row: MoneyRow): MoneyMovement { return { id: row.id, concertId: row.concert_id || undefined, kind: row.kind, amount: Number(row.amount), date: row.date, category: row.category, note: row.source_type ? `Generat automàticament · ${row.note}` : row.note, sourceType: row.source_type || undefined, sourceId: row.source_id || undefined } }
+interface MoneyRow { id: string; concert_id: string | null; kind: MoneyMovement['kind']; amount: number; date: string; category: string; note: string; payment_method?: MoneyMovement['paymentMethod']; source_type?: MoneyMovement['sourceType'] | null; source_id?: string | null }
+function fromMoneyRow(row: MoneyRow): MoneyMovement { return { id: row.id, concertId: row.concert_id || undefined, kind: row.kind, amount: Number(row.amount), date: row.date, category: row.category, note: row.source_type ? `Generat automàticament · ${row.note}` : row.note, paymentMethod: row.payment_method === 'cash' ? 'cash' : 'bank', sourceType: row.source_type || undefined, sourceId: row.source_id || undefined } }
 
 export async function listMoneyMovements(): Promise<MoneyMovement[]> {
   if (!supabase) return readCache<MoneyMovement>(moneyKey)
@@ -886,6 +886,7 @@ export async function listMoneyMovements(): Promise<MoneyMovement[]> {
 
 export async function saveMoneyMovement(movement: MoneyMovement): Promise<MoneyMovement> {
   if (movement.sourceType) throw new Error('Els moviments automàtics no es poden editar manualment.')
+  movement = { ...movement, paymentMethod: movement.paymentMethod === 'cash' ? 'cash' : 'bank' }
   if (!supabase) {
     const all = await listMoneyMovements()
     localStorage.setItem(moneyKey, JSON.stringify([movement, ...all.filter((item) => item.id !== movement.id)]))
@@ -898,7 +899,7 @@ export async function saveMoneyMovement(movement: MoneyMovement): Promise<MoneyM
   if (currentMovement?.source_type) throw new Error('Els moviments automàtics no es poden editar manualment.')
   const { data, error } = await supabase.from('money_movements').upsert({
     id: movement.id, band_id: await bandId(), concert_id: movement.concertId || null,
-    kind: movement.kind, amount: movement.amount, date: movement.date,
+    kind: movement.kind, amount: movement.amount, date: movement.date, payment_method: movement.paymentMethod,
     category: movement.category.trim(), note: movement.note.trim(),
   }).select('*').single()
   if (error) throw error

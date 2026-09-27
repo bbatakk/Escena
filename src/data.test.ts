@@ -37,6 +37,13 @@ describe('validació de backups', () => {
     expect(validateBackup({ ...emptyBackup, concerts: [concert], library: [{ id: 'doc', name: 'Rider', url: '' }], money: [{ id: 'movement', kind: 'ingres', amount: 10, date: '2026-10-05' }], merchProducts: [{ id: 'product', name: 'CD', price: 10, stock: 5 }], merchSales: [{ id: 'sale', concertId: concert.id, productId: 'product', quantity: 1, unitPrice: 10 }], people: [{ id: 'person', name: 'Músic' }], materials: [{ id: 'material', name: 'Micròfon' }], setlists: [{ id: 'setlist', name: 'Festival', songs: ['Tema'] }] })).toBe(true)
   })
 
+  it('valida el compte associat als moviments de tresoreria', () => {
+    const movement = { id: 'movement', kind: 'ingres', amount: 10, date: '2026-10-05' }
+    expect(validateBackup({ ...emptyBackup, money: [{ ...movement, paymentMethod: 'bank' }] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, money: [{ ...movement, paymentMethod: 'cash' }] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, money: [{ ...movement, paymentMethod: 'card' }] })).toBe(false)
+  })
+
   it('accepta imatges optimitzades del catàleg als backups locals i rebutja URL externes com a imatge', () => {
     const product = { id: 'shirt', name: 'Samarreta', price: 20, stock: 4, active: true }
     expect(validateBackup({ ...emptyBackup, merchProducts: [{ ...product, imageDataUrl: 'data:image/webp;base64,UklGRg==' }] })).toBe(true)

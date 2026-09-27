@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commissionRate, concertClosingSummary, concertSettlement, generatedTreasuryMovements, getPending, merchRevenueByConcert, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
+import { commissionRate, concertClosingSummary, concertSettlement, generatedTreasuryMovements, getPending, merchRevenueByConcert, moneyMovementBalance, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement, type MoneyMovement } from './model'
 
 describe('discogràfica i liquidació del catxet', () => {
   const agreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }, { above: 1000, percent: 20 }] }
@@ -164,6 +164,17 @@ describe('moviments d’ingressos automàtics', () => {
       { sourceType: 'merch_total', sourceId: 'paid', concertId: 'paid', amount: 20, date: '2026-10-06', kind: 'ingres' },
       { sourceType: 'merch_total', sourceId: 'legacy', concertId: 'legacy', amount: 25, date: '2026-10-06', kind: 'ingres' },
     ])
+  })
+
+  it('desglossa el balanç per compte i assumeix bancari per registres antics', () => {
+    const movements: MoneyMovement[] = [
+      { id: 'bank-income', kind: 'ingres', amount: 100, date: '2026-10-01', category: '', note: '', paymentMethod: 'bank' },
+      { id: 'cash-expense', kind: 'despesa', amount: 20, date: '2026-10-01', category: '', note: '', paymentMethod: 'cash' },
+      { id: 'old-income', kind: 'ingres', amount: 15, date: '2026-10-01', category: '', note: '' },
+    ]
+    expect(moneyMovementBalance(movements)).toBe(95)
+    expect(moneyMovementBalance(movements, 'bank')).toBe(115)
+    expect(moneyMovementBalance(movements, 'cash')).toBe(-20)
   })
 })
 
