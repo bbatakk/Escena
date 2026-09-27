@@ -186,11 +186,17 @@ export function generatedIncomeMovements(concerts: Concert[], label: LabelAgreem
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
     })
   }
-  const merchTotal = totalMerchRevenue(concerts, sales)
-  if (merchTotal > 0) generated.push({
-    id: 'automatic:merch-total', sourceType: 'merch_total', sourceId: 'local-band',
-    kind: 'ingres', amount: merchTotal, date: today, category: 'Marxandatge', note: `Generat automàticament · Total de ${sales.length} vendes`,
-  })
+  const revenueByConcert = merchRevenueByConcert(concerts, sales)
+  for (const [concertId, merchTotal] of revenueByConcert) {
+    if (merchTotal <= 0) continue
+    const concert = concerts.find((item) => item.id === concertId)
+    const concertSales = sales.filter((sale) => sale.concertId === concertId)
+    generated.push({
+      id: `automatic:merch-total:${concertId}`, sourceType: 'merch_total', sourceId: concertId,
+      concertId, kind: 'ingres', amount: merchTotal, date: today, category: 'Marxandatge',
+      note: `Generat automàticament · ${concertSales.length ? `${concertSales.reduce((sum, sale) => sum + sale.quantity, 0)} unitats venudes` : 'Resum antic'} · ${concert?.title || 'Concert'}`,
+    })
+  }
   return generated
 }
 

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { concertSettlement, totalMerchRevenue, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails, validateLabelAgreement } from './model'
+import { concertSettlement, merchRevenueByConcert, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails, validateLabelAgreement } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -346,11 +346,20 @@ async function syncLocalConcertIncome(concert: Concert, currentLabel?: LabelAgre
 
 async function syncLocalMerchTotalMovement(): Promise<void> {
   const [concerts, sales] = await Promise.all([listConcerts(), listMerchSales()])
-  const amount = totalMerchRevenue(concerts, sales)
-  writeLocalGeneratedMovement('merch_total', 'local-band', amount > 0 ? {
-    kind: 'ingres', amount, date: localToday(), category: 'Marxandatge',
-    note: `Generat automàticament · Total de ${sales.reduce((sum, sale) => sum + sale.quantity, 0)} unitats venudes`,
-  } : null)
+  const revenueByConcert = merchRevenueByConcert(concerts, sales)
+  const activeConcertIds = new Set(revenueByConcert.keys())
+  for (const movement of readCache<MoneyMovement>(moneyKey).filter((item) => item.sourceType === 'merch_total' && item.sourceId && !activeConcertIds.has(item.sourceId))) {
+    writeLocalGeneratedMovement('merch_total', movement.sourceId!, null)
+  }
+  for (const [concertId, amount] of revenueByConcert) {
+    if (amount <= 0) { writeLocalGeneratedMovement('merch_total', concertId, null); continue }
+    const concert = concerts.find((item) => item.id === concertId)
+    const concertSales = sales.filter((sale) => sale.concertId === concertId)
+    writeLocalGeneratedMovement('merch_total', concertId, {
+      concertId, kind: 'ingres', amount, date: localToday(), category: 'Marxandatge',
+      note: `Generat automàticament · ${concertSales.length ? `${concertSales.reduce((sum, sale) => sum + sale.quantity, 0)} unitats venudes` : 'Resum antic'} · ${concert?.title || 'Concert'}`,
+    })
+  }
 }
 
 function queueData(entity: OfflineDataEntity, action: 'save' | 'delete', payload: unknown, base?: unknown, hasBase = false): void {
