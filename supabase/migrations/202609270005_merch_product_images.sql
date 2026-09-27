@@ -12,8 +12,8 @@ for select to authenticated using (
   and exists (
     select 1 from public.band_members m
     join public.merch_products p on p.band_id = m.band_id
-    where m.band_id::text = (storage.foldername(name))[1]
-      and p.id::text = (storage.foldername(name))[2]
+    where m.band_id::text = (storage.foldername(storage.objects.name))[1]
+      and p.id::text = (storage.foldername(storage.objects.name))[2]
       and m.user_id = (select auth.uid())
   )
 );
@@ -24,8 +24,8 @@ for insert to authenticated with check (
   and exists (
     select 1 from public.band_members m
     join public.merch_products p on p.band_id = m.band_id
-    where m.band_id::text = (storage.foldername(name))[1]
-      and p.id::text = (storage.foldername(name))[2]
+    where m.band_id::text = (storage.foldername(storage.objects.name))[1]
+      and p.id::text = (storage.foldername(storage.objects.name))[2]
       and m.user_id = (select auth.uid())
   )
 );
@@ -36,8 +36,8 @@ for delete to authenticated using (
   and exists (
     select 1 from public.band_members m
     join public.merch_products p on p.band_id = m.band_id
-    where m.band_id::text = (storage.foldername(name))[1]
-      and p.id::text = (storage.foldername(name))[2]
+    where m.band_id::text = (storage.foldername(storage.objects.name))[1]
+      and p.id::text = (storage.foldername(storage.objects.name))[2]
       and m.user_id = (select auth.uid())
   )
 );
