@@ -1,9 +1,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': Deno.env.get('APP_ORIGIN') || '',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Vary': 'Origin',
 }
 
 type ConcertSummary = {
@@ -33,6 +34,8 @@ const dailyRequestLimit = 10
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return json({ error: 'Mètode no admès.' }, 405)
+  const contentLength = Number(request.headers.get('Content-Length'))
+  if (Number.isFinite(contentLength) && contentLength > 2 * 1024 * 1024) return json({ error: 'La petició supera el límit de 2 MB.' }, 413)
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')

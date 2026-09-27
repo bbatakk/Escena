@@ -22,6 +22,8 @@ describe('validació de backups', () => {
   it('rebutja la versió desconeguda i registres mal formats', () => {
     expect(validateBackup({ ...emptyBackup, version: backupVersion + 1 })).toBe(false)
     expect(validateBackup({ ...emptyBackup, merchSales: [{ id: 'sale' }] })).toBe(false)
+    expect(validateBackup({ ...emptyBackup, money: [{ id: 'movement', kind: 'ingres', amount: -1, date: '2026-09-24' }] })).toBe(false)
+    expect(validateBackup({ ...emptyBackup, merchProducts: [{ id: 'product', name: 'Samarreta', price: 10, stock: 3, sizes: [{ name: 'M', stock: -1 }] }] })).toBe(false)
   })
 
   it('accepta backups antics i valida les condicions opcionals de discogràfica', () => {

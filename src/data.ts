@@ -63,13 +63,14 @@ export function validateBackup(value: unknown): value is AppBackup {
   if (!isRecord(value)) return false
   const backup = value as Partial<AppBackup>
   const hasId = (item: unknown) => isRecord(item) && typeof item.id === 'string' && item.id.length > 0
+  const nonNegative = (item: unknown) => typeof item === 'number' && Number.isFinite(item) && item >= 0
   return backup.version === backupVersion && (backup.workspaceName === undefined || (typeof backup.workspaceName === 'string' && backup.workspaceName.trim().length > 0 && backup.workspaceName.length <= 80))
     && (backup.labelAgreement === undefined || validLabel(backup.labelAgreement))
-    && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && isRecord(item.details) && Array.isArray(item.details.documents) && Array.isArray(item.details.materials))
+    && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && isRecord(item.details) && Array.isArray(item.details.documents) && Array.isArray(item.details.materials) && nonNegative(item.feeAmount) && nonNegative(item.feePaid))
     && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string')
-    && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && typeof item.amount === 'number' && typeof item.date === 'string')
-    && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.price === 'number' && typeof item.stock === 'number' && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && typeof size.stock === 'number'))))
-    && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && typeof item.unitPrice === 'number')
+    && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && nonNegative(item.amount) && typeof item.date === 'string')
+    && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && nonNegative(item.price) && nonNegative(item.stock) && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && nonNegative(size.stock)))))
+    && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && nonNegative(item.unitPrice))
     && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string')
     && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string')
     && Array.isArray(backup.setlists) && backup.setlists.every((item) => hasId(item) && typeof item.name === 'string' && Array.isArray(item.songs) && item.songs.every((song) => typeof song === 'string'))
@@ -262,7 +263,7 @@ function normalizeConcert(concert: Concert): Concert {
   return { ...concert, country: typeof concert.country === 'string' ? concert.country : '' }
 }
 
-function queueData(entity: 'money' | 'product' | 'sale', action: 'save' | 'delete', payload: unknown): void {
+function queueData(entity: 'money' | 'product' | 'sale' | 'resource', action: 'save' | 'delete', payload: unknown): void {
   const queue = readCache<{ id: string; entity: string; action: string; payload: unknown }>(offlineDataQueueKey)
   const id = typeof payload === 'string' ? payload : (payload as { id: string }).id
   writeCache(offlineDataQueueKey, [...queue.filter((item) => !(item.entity === entity && item.id === id)), { id, entity, action, payload }])
@@ -430,7 +431,7 @@ export async function syncOfflineConcerts(): Promise<number> {
 
 export async function syncOfflineData(): Promise<number> {
   if (!supabase || offline()) return 0
-  const queue = readCache<{ id: string; entity: 'money' | 'product' | 'sale'; action: 'save' | 'delete'; payload: unknown }>(offlineDataQueueKey)
+  const queue = readCache<{ id: string; entity: 'money' | 'product' | 'sale' | 'resource'; action: 'save' | 'delete'; payload: unknown }>(offlineDataQueueKey)
   const remaining = [...queue]
   let synced = 0
   for (const operation of queue) {
@@ -439,6 +440,10 @@ export async function syncOfflineData(): Promise<number> {
         if (operation.action === 'save') await saveMoneyMovement(operation.payload as MoneyMovement)
         else await deleteMoneyMovement(operation.id)
       } else if (operation.entity === 'product' && operation.action === 'save') await saveMerchProduct(operation.payload as MerchProduct)
+      else if (operation.entity === 'resource' && operation.action === 'save') {
+        const resource = operation.payload as { table: ResourceTable; value: Resource }
+        await saveResource(resource.table, resource.value)
+      }
       else if (operation.entity === 'sale') {
         if (operation.action === 'save') await saveMerchSale(operation.payload as MerchSale)
         else await deleteMerchSale(operation.id)
@@ -681,7 +686,7 @@ export async function listAllResources<T extends Resource>(table: ResourceTable)
 
 export async function saveResource<T extends Resource>(table: ResourceTable, resource: T): Promise<T> {
   if (!supabase) { const all = readCache<T>(resourceKeys[table]); const next = [...all.filter((item) => item.id !== resource.id), resource]; writeCache(resourceKeys[table], next); return resource }
-  if (offline()) { const all = readCache<T>(resourceKeys[table]); writeCache(resourceKeys[table], [...all.filter((item) => item.id !== resource.id), resource]); return resource }
+  if (offline()) { const all = readCache<T>(resourceKeys[table]); writeCache(resourceKeys[table], [...all.filter((item) => item.id !== resource.id), resource]); queueData('resource', 'save', { id: resource.id, table, value: resource }); return resource }
   const values = table === 'band_people'
     ? { id: resource.id, band_id: await bandId(), name: (resource as BandPerson).name, kind: (resource as BandPerson).kind, phone: (resource as BandPerson).phone, email: (resource as BandPerson).email, active: resource.active }
     : table === 'band_materials'

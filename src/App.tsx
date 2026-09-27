@@ -11,6 +11,7 @@ import ConcertAssistant from './ConcertAssistant'
 import { cloudConfigured, deleteConcert, deleteMerchSale, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listResource, removeConcertDocumentFile, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument } from './data'
 import { concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, shouldMarkConcertRealized, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
+import { useDialogFocus } from './useDialogFocus'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
 const Treasury = lazy(() => import('./Treasury'))
@@ -29,7 +30,7 @@ function safeLink(value: string): string | null {
 }
 
 function BrandName() {
-  return <span className="brand-name" aria-label="Escena"><span className="brand-letters" aria-hidden="true">{'escena'.split('').map((letter, index) => <span key={`${letter}-${index}`} style={{ animationDelay: `${index * 45}ms` }}>{letter}</span>)}</span><span className="brand-dot" aria-hidden="true">.</span></span>
+   return <span className="brand-name" aria-label="Escena"><span className="brand-letters" aria-hidden="true">escena</span><span className="brand-dot" aria-hidden="true">.</span></span>
 }
 
 function AuthScreen() {
@@ -158,6 +159,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 function StageSetlist({ title, songs, onClose }: { title: string; songs: string[]; onClose: () => void }) {
+  useDialogFocus(true, '.stage-setlist')
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     const previousOverflow = document.body.style.overflow
@@ -166,7 +168,7 @@ function StageSetlist({ title, songs, onClose }: { title: string; songs: string[
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener('keydown', onKeyDown) }
   }, [onClose])
 
-  return <div className="stage-setlist" role="dialog" aria-modal="true" aria-label={`Setlist de ${title}`}>
+  return <div tabIndex={-1} className="stage-setlist" role="dialog" aria-modal="true" aria-label={`Setlist de ${title}`}>
     <header className="stage-setlist-header"><div><span className="eyebrow">MODE ESCENARI</span><p>{songs.length} cançons · Llista completa · Esc per sortir</p></div><button type="button" className="stage-close" onClick={onClose}><X size={20} /> Tancar</button></header>
     <div className="stage-setlist-body"><div className="stage-paper stage-paper-list" aria-label="Setlist complet">{songs.map((song, index) => <div className="stage-list-song" key={`${song}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><p>{song}</p></div>)}</div></div>
   </div>
@@ -188,6 +190,8 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
   const [merchSaleOpen, setMerchSaleOpen] = useState(false)
   const [materialOpen, setMaterialOpen] = useState(false)
   const [stageSetlistOpen, setStageSetlistOpen] = useState(false)
+  useDialogFocus(materialOpen, '.material-window')
+  useDialogFocus(merchSaleOpen, '.merch-sale-window')
   const d = concert.details
   const settlement = concertSettlement(concert, labelAgreement)
   useEffect(() => {
@@ -401,7 +405,7 @@ export default function App() {
   }
   async function remove() {
     if (!selected || !window.confirm(`Vols eliminar «${selected.title}»? Aquesta acció no es pot desfer.`)) return
-    try { await deleteConcert(selected.id); for (const doc of selected.details.documents) { if (doc.storagePath && isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list', true) } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
+     try { await deleteConcert(selected.id, selected.updatedAt); for (const doc of selected.details.documents) { if (doc.storagePath && isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {}) }; setConcerts((prev) => prev.filter((item) => item.id !== selected.id)); navigate('list', true) } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el concert.') }
   }
   async function toggleMaterial(id: string) {
     if (!selected) return

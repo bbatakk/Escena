@@ -61,3 +61,5 @@ npm run build
 - `docs/product.md`: objectiu, abast actual i fases posteriors.
 - `docs/domain.md`: model de concert i regles dels pendents.
 - `AGENTS.md`: guia curta per a eines de desenvolupament amb IA.
+
+Per a l’assistent, configura també el secret `APP_ORIGIN` amb l’origen HTTPS exacte del web (per exemple, `supabase secrets set APP_ORIGIN=https://escena.vercel.app`, sense barra final). La funció d’IA rebutja les peticions del navegador des d’altres orígens.
