@@ -27,7 +27,7 @@ const allowedModes: Record<Section, readonly Mode[]> = {
 }
 export const sectionLabels: Record<Section, string> = { people: 'Persones', materials: 'Material', setlists: 'Setlists', documents: 'Documents', money: 'Tresoreria', products: 'Marxandatge', sales: 'Venda de marxandatge', workspace: 'Nom de la banda', theme: 'Tema visual' }
 export const modeLabels: Record<Mode, string> = { create: 'Crear', update: 'Editar', archive: 'Arxivar', delete: 'Eliminar' }
-export const actionFieldLabels: Record<string, string> = { name: 'Nom', kind: 'Tipus', phone: 'Telèfon', email: 'Correu', category: 'Categoria', songs: 'Cançons', url: 'Enllaç', amount: 'Import', date: 'Data', note: 'Nota', concertId: 'Concert', paymentMethod: 'Compte bancari o metàl·lic', price: 'Preu', stock: 'Estoc', sizes: 'Talles', productId: 'Producte', quantity: 'Unitats', size: 'Talla', theme: 'Tema' }
+export const actionFieldLabels: Record<string, string> = { name: 'Nom', kind: 'Tipus', phone: 'Telèfon', email: 'Correu', category: 'Categoria', songs: 'Cançons', url: 'Enllaç', amount: 'Import', date: 'Data', note: 'Nota', concertId: 'Concert', paymentMethod: 'Compte bancari o efectiu', price: 'Preu', stock: 'Estoc', sizes: 'Talles', productId: 'Producte', quantity: 'Unitats', size: 'Talla', theme: 'Tema' }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const str = (value: unknown, max = 200): value is string => typeof value === 'string' && value.length <= max

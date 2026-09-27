@@ -32,7 +32,7 @@ Les vendes de marxandatge s'inclouen automàticament als ingressos totals i al b
 
 El catxet **net cobrat** de cada concert classificat s’inclou també automàticament en el balanç de Tresoreria. El catxet pactat no és cobrament ni moviment: no s’ha de registrar manualment com a ingrés una segona vegada. Els moviments manuals continuen sent independents.
 
-Cada moviment de tresoreria indica si s’ha fet pel compte bancari o en metàl·lic. El balanç general es desglossa també en aquests dos saldos nets. Els moviments automàtics i els registres antics sense compte associat es compten al compte bancari; els nous moviments manuals permeten triar el compte.
+Cada moviment de tresoreria indica si s’ha fet pel compte bancari o en efectiu. El balanç general es desglossa també en aquests dos saldos nets. Els moviments automàtics i els registres antics sense compte associat es compten al compte bancari; els nous moviments manuals permeten triar el compte.
 
 Els productes de marxandatge poden tenir variants de talla, cadascuna amb estoc propi. Les vendes guarden la talla triada i redueixen l'estoc d'aquesta variant; els productes sense talles continuen utilitzant l'estoc general existent.
 
