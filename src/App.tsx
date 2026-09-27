@@ -321,13 +321,14 @@ export default function App() {
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [offlineSyncStatus, setOfflineSyncStatus] = useState(() => getOfflineSyncStatus())
   const formDirtyRef = useRef(false)
+  const formExitApprovedRef = useRef(false)
   const formHistoryRef = useRef<AppHistoryState | null>(null)
 
-  function updateFormDirty(dirty: boolean) { formDirtyRef.current = dirty }
+  function updateFormDirty(dirty: boolean) { if (dirty && formExitApprovedRef.current) return; formDirtyRef.current = dirty }
   function confirmLeaveForm(): boolean {
     if (!formDirtyRef.current) return true
     const leave = window.confirm('Hi ha canvis desats com a esborrany. Vols sortir de la fitxa? Podràs recuperar-los en tornar-hi.')
-    if (leave) updateFormDirty(false)
+    if (leave) { formExitApprovedRef.current = true; updateFormDirty(false) }
     return leave
   }
 
@@ -426,6 +427,7 @@ export default function App() {
   function navigate(to: Screen, replace = false) { if (!confirmLeaveForm()) return; if (!replace && screen === to && !selectedId) { setMenuOpen(false); return }; const state: AppHistoryState = { escena: true, screen: to }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setScreen(to); setSelectedId(null); setFormInitial(null); setMenuOpen(false); window.scrollTo(0, 0) }
   function startForm(initial: Concert, recoverNewDraft = true) {
     if (!confirmLeaveForm()) return
+    formExitApprovedRef.current = false
     if (recoverNewDraft && !initial.updatedAt && !initial.title) {
       try {
         const draftId = localStorage.getItem('escena-new-concert-draft-id-v1')
@@ -447,6 +449,7 @@ export default function App() {
   function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert, false) }
   async function save(item: Concert, navigateAfterSave = true) {
     const saved = await saveConcert(item)
+    formExitApprovedRef.current = true
     updateFormDirty(false)
     const previous = concerts.find((existing) => existing.id === saved.id)
     const retained = new Set(saved.details.documents.map((doc) => doc.storagePath))
@@ -544,7 +547,7 @@ export default function App() {
           {screen === 'settings' && labelReady ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} labelAgreement={labelAgreement} onLabelChange={setLabelAgreement} /> : null}
            {screen === 'assistant' && labelReady ? <ConcertAssistant concerts={concerts} workspaceName={workspaceName} labelAgreement={labelAgreement} onWorkspaceNameChange={setWorkspaceName} onThemeChange={(value) => { setTheme(value); document.documentElement.dataset.theme = value }} onCreateDraft={(draft) => startForm(draft)} onUpdateConcert={(concert) => save(concert, false)} onSaveSetlist={createAssistantSetlist} onDeleteConcert={deleteAssistantConcert} onSavePerson={createAssistantPerson} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}
-          {!loading && labelReady && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} labelAgreement={labelAgreement} onDirtyChange={updateFormDirty} onSave={save} onCancel={() => window.history.back()} /> : null}
+          {!loading && labelReady && screen === 'form' && formInitial ? <ConcertForm key={formInitial.id} initial={formInitial} labelAgreement={labelAgreement} onDirtyChange={updateFormDirty} onSave={save} onCancel={() => { formExitApprovedRef.current = true; updateFormDirty(false); window.history.back() }} /> : null}
            {!loading && labelReady && screen === 'detail' && selected ? <Detail key={selected.id} concert={selected} labelAgreement={labelAgreement} onBack={() => window.history.back()} onEdit={() => startForm(selected)} onDelete={() => void remove()} onToggle={toggleMaterial} onUpload={uploadDocument} onRemoveFile={removeDocumentFile} /> : null}
         {!loading && (screen === 'list' || screen === 'calendar') ? <>
           <div className="page-heading list-heading"><div><span className="eyebrow">LA BANDA EN MOVIMENT</span><h1>Els concerts<span className="heading-period">.</span></h1><p>Tot el que passa abans, durant i després de pujar a l'escenari.</p></div><button className="button button-primary new-button" onClick={() => startForm(newConcert())}><Plus size={18} /> Nou concert</button></div>
