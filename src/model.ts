@@ -170,6 +170,8 @@ export interface ConcertDetails {
   passes: string
   merchSales: number
   expenses: number
+  feePaymentMethod?: MoneyMovementPaymentMethod
+  expensePaymentMethod?: MoneyMovementPaymentMethod
   notes: string
 }
 
@@ -194,12 +196,12 @@ export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgre
     const settlement = concertSettlement(concert, label)
     if (!settlement.unresolved && settlement.netPaid > 0) generated.push({
       id: `automatic:concert-fee:${concert.id}`, sourceType: 'concert_fee', sourceId: concert.id,
-      concertId: concert.id, kind: 'ingres', amount: settlement.netPaid, paymentMethod: 'bank',
+      concertId: concert.id, kind: 'ingres', amount: settlement.netPaid, paymentMethod: concert.details.feePaymentMethod || 'bank',
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
     })
     if (concert.details.expenses > 0) generated.push({
       id: `automatic:concert-expense:${concert.id}`, sourceType: 'concert_expense', sourceId: concert.id,
-      concertId: concert.id, kind: 'despesa', amount: concert.details.expenses, paymentMethod: 'bank',
+      concertId: concert.id, kind: 'despesa', amount: concert.details.expenses, paymentMethod: concert.details.expensePaymentMethod || 'bank',
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Despeses del concert', note: `Generat automàticament · ${concert.title}`,
     })
   }
@@ -257,6 +259,7 @@ export function shouldMarkConcertRealized(concert: Concert, today: string): bool
 export function emptyDetails(): ConcertDetails {
   return {
     management: 'pendent',
+    feePaymentMethod: 'bank', expensePaymentMethod: 'bank',
     conditions: '', cancellation: '', contactName: '', contactPhone: '', contactEmail: '',
     team: '', personIds: [], travel: '', loadIn: '', parking: '', dinner: 'pendent', dinnerDetails: '',
     lodging: 'pendent', lodgingDetails: '', lodgingAddress: '', schedule: [], documents: [], materials: [],

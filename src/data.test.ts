@@ -37,6 +37,12 @@ describe('validació de backups', () => {
     expect(validateBackup({ ...emptyBackup, concerts: [concert], library: [{ id: 'doc', name: 'Rider', url: '' }], money: [{ id: 'movement', kind: 'ingres', amount: 10, date: '2026-10-05' }], merchProducts: [{ id: 'product', name: 'CD', price: 10, stock: 5 }], merchSales: [{ id: 'sale', concertId: concert.id, productId: 'product', quantity: 1, unitPrice: 10 }], people: [{ id: 'person', name: 'Músic' }], materials: [{ id: 'material', name: 'Micròfon' }], setlists: [{ id: 'setlist', name: 'Festival', songs: ['Tema'] }] })).toBe(true)
   })
 
+  it('valida el compte de catxet i despeses de la fitxa', () => {
+    const concert = { ...newConcert(), date: '2026-10-05', details: { ...newConcert().details, feePaymentMethod: 'cash', expensePaymentMethod: 'bank' } }
+    expect(validateBackup({ ...emptyBackup, concerts: [concert] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, concerts: [{ ...concert, details: { ...concert.details, expensePaymentMethod: 'other' } }] })).toBe(false)
+  })
+
   it('valida el compte associat als moviments de tresoreria', () => {
     const movement = { id: 'movement', kind: 'ingres', amount: 10, date: '2026-10-05' }
     expect(validateBackup({ ...emptyBackup, money: [{ ...movement, paymentMethod: 'bank' }] })).toBe(true)

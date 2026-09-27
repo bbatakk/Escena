@@ -155,12 +155,13 @@ describe('tancament econòmic del concert', () => {
 
 describe('moviments d’ingressos automàtics', () => {
   it('projecta catxet net, despesa de fitxa i un total de vendes per concert', () => {
-    const paid = newConcert(); paid.id = 'paid'; paid.feePaid = 600; paid.details.expenses = 12; paid.details.management = 'discografica'; paid.details.labelAgreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }] }
-    const legacy = newConcert(); legacy.id = 'legacy'; legacy.details.merchSales = 25
+    const paid = newConcert(); paid.id = 'paid'; paid.feePaid = 600; paid.details.expenses = 12; paid.details.feePaymentMethod = 'cash'; paid.details.management = 'discografica'; paid.details.labelAgreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }] }
+    const legacy = newConcert(); legacy.id = 'legacy'; legacy.details.merchSales = 25; legacy.details.expenses = 4; legacy.details.expensePaymentMethod = 'cash'
     const sales = [{ id: 'sale', concertId: paid.id, productId: 'cd', quantity: 2, unitPrice: 10, note: '', createdAt: '2026-10-05T10:00:00.000Z' }]
     expect(generatedTreasuryMovements([paid, legacy], null, sales, '2026-10-06')).toMatchObject([
-      { sourceType: 'concert_fee', sourceId: 'paid', amount: 510, kind: 'ingres' },
-      { sourceType: 'concert_expense', sourceId: 'paid', amount: 12, kind: 'despesa' },
+      { sourceType: 'concert_fee', sourceId: 'paid', amount: 510, kind: 'ingres', paymentMethod: 'cash' },
+      { sourceType: 'concert_expense', sourceId: 'paid', amount: 12, kind: 'despesa', paymentMethod: 'bank' },
+      { sourceType: 'concert_expense', sourceId: 'legacy', amount: 4, kind: 'despesa', paymentMethod: 'cash' },
       { sourceType: 'merch_total', sourceId: 'paid', concertId: 'paid', amount: 20, date: '2026-10-06', kind: 'ingres' },
       { sourceType: 'merch_total', sourceId: 'legacy', concertId: 'legacy', amount: 25, date: '2026-10-06', kind: 'ingres' },
     ])

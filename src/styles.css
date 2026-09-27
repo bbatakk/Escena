@@ -273,3 +273,4 @@
 .money-summary{grid-template-columns:1.5fr repeat(4,minmax(0,1fr))}.money-summary>div{min-width:0;padding:17px 16px}.money-summary .eyebrow{letter-spacing:.7px}.money-summary strong{font-size:20px}
 @media(max-width:1000px){.money-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:590px){.money-summary{grid-template-columns:1fr}.money-summary>div{padding:14px 17px}.money-summary>div:first-child{padding-bottom:17px}.money-summary strong{font-size:19px}}
+.closing-payment-group{display:grid;gap:12px;align-content:start}@media(max-width:590px){.closing-payment-grid{grid-template-columns:1fr}}

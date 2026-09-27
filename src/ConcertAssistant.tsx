@@ -21,8 +21,8 @@ type AssistantPlan =
   | { type: 'manage'; actions: AppAction[] }
 
 const editableFields = ['title', 'date', 'status', 'venue', 'city', 'country', 'address', 'feeAmount', 'feePaid'] as const
-const editableDetails = ['management', 'conditions', 'cancellation', 'team', 'travel', 'loadIn', 'parking', 'dinner', 'dinnerDetails', 'lodging', 'lodgingDetails', 'lodgingAddress', 'setlist', 'passes', 'expenses', 'notes', 'personIds'] as const
-const detailLabels: Record<(typeof editableDetails)[number], string> = { management: 'Gestionat per', conditions: 'Condicions', cancellation: 'Cancel·lació', team: 'Equip', travel: 'Desplaçament', loadIn: 'Accés de càrrega', parking: 'Aparcament', dinner: 'Sopar', dinnerDetails: 'Detalls del sopar', lodging: 'Allotjament', lodgingDetails: 'Detalls de l’allotjament', lodgingAddress: 'Adreça de l’allotjament', setlist: 'Repertori', passes: 'Passis', expenses: 'Despeses', notes: 'Notes', personIds: 'Persones que hi van' }
+const editableDetails = ['management', 'conditions', 'cancellation', 'team', 'travel', 'loadIn', 'parking', 'dinner', 'dinnerDetails', 'lodging', 'lodgingDetails', 'lodgingAddress', 'setlist', 'passes', 'expenses', 'feePaymentMethod', 'expensePaymentMethod', 'notes', 'personIds'] as const
+const detailLabels: Record<(typeof editableDetails)[number], string> = { management: 'Gestionat per', conditions: 'Condicions', cancellation: 'Cancel·lació', team: 'Equip', travel: 'Desplaçament', loadIn: 'Accés de càrrega', parking: 'Aparcament', dinner: 'Sopar', dinnerDetails: 'Detalls del sopar', lodging: 'Allotjament', lodgingDetails: 'Detalls de l’allotjament', lodgingAddress: 'Adreça de l’allotjament', setlist: 'Repertori', passes: 'Passis', expenses: 'Despeses', feePaymentMethod: 'Compte del catxet', expensePaymentMethod: 'Compte de les despeses', notes: 'Notes', personIds: 'Persones que hi van' }
 const fieldLabels: Record<(typeof editableFields)[number], string> = { title: 'Nom', date: 'Data', status: 'Estat', venue: 'Sala o espai', city: 'Població', country: 'País', address: 'Adreça', feeAmount: 'Catxet acordat', feePaid: 'Catxet cobrat' }
 const personKindLabels: Record<PersonKind, string> = { musica: 'Música', tecnic: 'Tècnic', manager: 'Mànager', contacte: 'Contacte' }
 const personNameKey = (name: string) => name.trim().normalize('NFKC').toLocaleLowerCase('ca')
@@ -146,6 +146,7 @@ export function parsePlan(value: unknown, concerts: Concert[], setlists: Setlist
           if (key === 'management') { if (['pendent', 'banda', 'discografica'].includes(String(next))) details[key] = next }
           else if (key === 'dinner' || key === 'lodging') { if (['pendent', 'si', 'no'].includes(String(next))) details[key] = next }
           else if (key === 'expenses') { if (typeof next === 'number' && Number.isFinite(next) && next >= 0) details[key] = next }
+          else if (key === 'feePaymentMethod' || key === 'expensePaymentMethod') { if (next === 'bank' || next === 'cash') details[key] = next }
           else if (key === 'personIds') { if (Array.isArray(next) && next.length <= 50 && next.every((id) => typeof id === 'string' && existingPeople.some((person) => person.id === id && person.active)) && new Set(next).size === next.length) details[key] = next }
           else if (typeof next === 'string' && next.length <= 4000) details[key] = next.trim()
           if (!(key in details)) throw new Error(`El valor de «${detailLabels[key]}» no és vàlid.`)

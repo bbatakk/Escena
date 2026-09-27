@@ -34,6 +34,8 @@ El catxet **net cobrat** de cada concert classificat s’inclou també automàti
 
 Cada moviment de tresoreria indica si s’ha fet pel compte bancari o en efectiu. El balanç general es desglossa també en aquests dos saldos nets. Els moviments automàtics i els registres antics sense compte associat es compten al compte bancari; els nous moviments manuals permeten triar el compte.
 
+Al tancament de cada concert, el catxet cobrat i les despeses resumides tenen una assignació de compte independent. Els moviments automàtics que se’n deriven utilitzen aquests comptes en el balanç de Tresoreria.
+
 Els productes de marxandatge poden tenir variants de talla, cadascuna amb estoc propi. Les vendes guarden la talla triada i redueixen l'estoc d'aquesta variant; els productes sense talles continuen utilitzant l'estoc general existent.
 
 Els recursos de banda (`BandPerson`, `BandMaterial`, `SetlistTemplate`) són catàlegs reutilitzables. La fitxa copia les seleccions al concert: modificar persones, material o una plantilla no canvia concerts anteriors. Les dades antigues de contacte, equip, material i setlist continuen sent vàlides.
