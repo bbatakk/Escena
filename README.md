@@ -65,3 +65,5 @@ npm run build
 Per a l’assistent, configura també el secret `APP_ORIGIN` amb l’origen HTTPS exacte del web (per exemple, `supabase secrets set APP_ORIGIN=https://escena.vercel.app`, sense barra final). La funció d’IA rebutja les peticions del navegador des d’altres orígens.
 
 Per als moviments automàtics, executa en aquest ordre `supabase/migrations/202609270001_automatic_income_movements.sql`, `supabase/migrations/202609270002_merch_single_treasury_movement.sql`, `supabase/migrations/202609270003_merch_movements_per_concert.sql` i `supabase/migrations/202609270004_concert_expense_movements.sql` a l’SQL Editor. Les migracions creen i sincronitzen catxets nets, totals de marxandatge per concert i despeses de resum de la fitxa (sempre que no hi hagi despeses detallades vinculades). En mode demo local, els moviments es calculen des de les dades guardades en aquest navegador.
+
+Per activar les imatges privades dels productes de marxandatge, executa `supabase/migrations/202609270005_merch_product_images.sql` a l’SQL Editor abans de desplegar el formulari de productes actualitzat.

@@ -88,6 +88,9 @@ export interface MerchProduct {
   stock: number
   active: boolean
   sizes?: MerchSizeVariant[]
+  imagePath?: string
+  imageUrl?: string
+  imageDataUrl?: string
 }
 
 export interface MerchSizeVariant {

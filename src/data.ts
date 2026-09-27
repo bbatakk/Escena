@@ -6,6 +6,7 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const cloudConfigured = Boolean(url && key)
 export const supabase = cloudConfigured ? createClient(url, key) : null
 const documentBucket = 'concert-documents'
+const merchImageBucket = 'merch-product-images'
 const maxDocumentBytes = 20 * 1024 * 1024
 
 function storageErrorMessage(error: { message?: string; statusCode?: string | number }): Error {
@@ -51,7 +52,8 @@ export interface AppBackup {
 
 export async function exportBackup(): Promise<AppBackup> {
   const [concerts, library, money, merchProducts, merchSales, people, materials, setlists, workspaceName, labelAgreement] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), getBandName(), getBandLabel()])
-  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, labelAgreement, concerts, library, money: money.filter((movement) => !movement.sourceType), merchProducts, merchSales, people, materials, setlists }
+  const safeProducts = supabase ? merchProducts.map((product) => ({ ...product, imagePath: undefined, imageUrl: undefined, imageDataUrl: undefined })) : merchProducts
+  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, labelAgreement, concerts, library, money: money.filter((movement) => !movement.sourceType), merchProducts: safeProducts, merchSales, people, materials, setlists }
 }
 
 function validLabel(value: unknown): boolean {
@@ -78,7 +80,7 @@ export function validateBackup(value: unknown): value is AppBackup {
     && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && typeof item.title === 'string' && isDate(item.date) && ['en_converses', 'reservat', 'confirmat', 'realitzat', 'cancel·lat'].includes(String(item.status)) && nonNegative(item.feeAmount) && nonNegative(item.feePaid) && isRecord(item.details) && Array.isArray(item.details.documents) && item.details.documents.every(validDocument) && Array.isArray(item.details.materials) && item.details.materials.every(validConcertMaterial) && (item.details.schedule === undefined || (Array.isArray(item.details.schedule) && item.details.schedule.every(validScheduleItem))) && (item.details.personIds === undefined || (Array.isArray(item.details.personIds) && item.details.personIds.every((id) => typeof id === 'string'))))
     && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string' && (item.archived === undefined || typeof item.archived === 'boolean') && (item.storagePath === undefined || typeof item.storagePath === 'string') && (item.fileName === undefined || typeof item.fileName === 'string'))
     && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && nonNegative(item.amount) && isDate(item.date) && (item.category === undefined || typeof item.category === 'string') && (item.note === undefined || typeof item.note === 'string') && (item.concertId === undefined || typeof item.concertId === 'string'))
-    && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && nonNegative(item.price) && Number.isSafeInteger(item.stock) && nonNegative(item.stock) && (item.active === undefined || typeof item.active === 'boolean') && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && Number.isSafeInteger(size.stock) && nonNegative(size.stock)))))
+    && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && nonNegative(item.price) && Number.isSafeInteger(item.stock) && nonNegative(item.stock) && (item.active === undefined || typeof item.active === 'boolean') && item.imageUrl === undefined && (item.imageDataUrl === undefined || (typeof item.imageDataUrl === 'string' && /^data:image\/(?:webp|png|jpeg);base64,/.test(item.imageDataUrl) && item.imageDataUrl.length <= 7 * 1024 * 1024)) && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && Number.isSafeInteger(size.stock) && nonNegative(size.stock)))))
     && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && nonNegative(item.unitPrice) && (item.note === undefined || typeof item.note === 'string') && (item.size === undefined || typeof item.size === 'string'))
     && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean'))
     && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && (item.category === undefined || typeof item.category === 'string'))
@@ -211,7 +213,7 @@ export function importLocalBackup(backup: AppBackup): void {
   localStorage.setItem(demoKey, JSON.stringify(backup.concerts.map(normalizeConcert)))
   localStorage.setItem(libraryKey, JSON.stringify(backup.library.map((item) => ({ ...item, archived: item.archived ?? false }))))
   localStorage.setItem(moneyKey, JSON.stringify(backup.money.map((item) => ({ ...item, category: item.category || '', note: item.note || '' }))))
-  localStorage.setItem(merchProductsKey, JSON.stringify(backup.merchProducts.map((item) => ({ ...item, active: item.active ?? true }))))
+  localStorage.setItem(merchProductsKey, JSON.stringify(backup.merchProducts.map((item) => ({ ...item, active: item.active ?? true, imagePath: undefined, imageUrl: item.imageDataUrl ? undefined : item.imageUrl }))))
   localStorage.setItem(merchSalesKey, JSON.stringify(backup.merchSales.map((item) => ({ ...item, note: item.note || '' }))))
   localStorage.setItem(peopleKey, JSON.stringify(backup.people.map((item) => ({ ...item, active: item.active ?? true }))))
   localStorage.setItem(materialsKey, JSON.stringify(backup.materials.map((item) => ({ ...item, active: item.active ?? true, category: item.category || '' }))))
@@ -226,9 +228,10 @@ export async function importBackup(backup: AppBackup): Promise<void> {
   if (offline()) throw new Error('Connecta’t a internet per importar el backup a l’espai compartit.')
 
   // Cloud imports merge/overwrite matching IDs; they never delete records missing from the file.
-  const [currentConcerts, currentSales, currentBandId] = await Promise.all([listConcerts(), listMerchSales(), bandId()])
+  const [currentConcerts, currentSales, currentProducts, currentBandId] = await Promise.all([listConcerts(), listMerchSales(), listMerchProducts(), bandId()])
   const concertVersions = new Map(currentConcerts.map((concert) => [concert.id, concert.updatedAt]))
   const currentSaleIds = new Set(currentSales.map((sale) => sale.id))
+  const currentProductIds = new Map(currentProducts.map((product) => [product.id, product.imagePath]))
   const ownPath = (path?: string) => path?.startsWith(`${currentBandId}/`) ? path : undefined
 
   for (const concert of backup.concerts) {
@@ -251,7 +254,7 @@ export async function importBackup(backup: AppBackup): Promise<void> {
     return saveBandDocument({ ...document, archived: document.archived ?? false, storagePath, fileName: storagePath ? document.fileName : undefined })
   }))
   await Promise.all(backup.money.map((item) => saveMoneyMovement({ ...item, category: item.category || '', note: item.note || '' })))
-  await Promise.all(backup.merchProducts.map((item) => saveMerchProduct({ ...item, active: item.active ?? true })))
+  await Promise.all(backup.merchProducts.map((item) => saveMerchProduct({ ...item, active: item.active ?? true, imagePath: currentProductIds.get(item.id), imageUrl: undefined, imageDataUrl: undefined })))
   await Promise.all(backup.people.map((item) => saveResource('band_people', { ...item, active: item.active ?? true })))
   await Promise.all(backup.materials.map((item) => saveResource('band_materials', { ...item, active: item.active ?? true, category: item.category || '' })))
   await Promise.all(backup.setlists.map((item) => saveResource('setlist_templates', { ...item, active: item.active ?? true })))
@@ -920,24 +923,78 @@ export async function deleteMoneyMovement(id: string): Promise<void> {
   writeCache(moneyKey, readCache<MoneyMovement>(moneyKey).filter((item) => item.id !== id))
 }
 
-interface MerchProductRow { id: string; name: string; price: number; stock: number; active: boolean; sizes?: MerchProduct['sizes'] | null }
+interface MerchProductRow { id: string; name: string; price: number; stock: number; active: boolean; sizes?: MerchProduct['sizes'] | null; image_path?: string | null }
 interface MerchSaleRow { id: string; concert_id: string; product_id: string; quantity: number; unit_price: number; note: string; size?: string | null; created_at?: string }
-function fromMerchProduct(row: MerchProductRow): MerchProduct { return { id: row.id, name: row.name, price: Number(row.price), stock: Number(row.stock), active: row.active, sizes: row.sizes || [] } }
+function fromMerchProduct(row: MerchProductRow): MerchProduct { return { id: row.id, name: row.name, price: Number(row.price), stock: Number(row.stock), active: row.active, sizes: row.sizes || [], imagePath: row.image_path || undefined } }
 function fromMerchSale(row: MerchSaleRow): MerchSale { return { id: row.id, concertId: row.concert_id, productId: row.product_id, quantity: Number(row.quantity), unitPrice: Number(row.unit_price), note: row.note, size: row.size || undefined, createdAt: row.created_at } }
 
 export async function listMerchProducts(): Promise<MerchProduct[]> {
   if (!supabase || offline()) return readCache<MerchProduct>(merchProductsKey)
   const { data, error } = await supabase.from('merch_products').select('*').order('name')
   if (error) throw error
-  const products = (data as MerchProductRow[]).map(fromMerchProduct); writeCache(merchProductsKey, products); return products
+  const products = await Promise.all((data as MerchProductRow[]).map(async (row) => {
+    const product = fromMerchProduct(row)
+    if (!product.imagePath) return product
+    const { data: signed } = await supabase!.storage.from(merchImageBucket).createSignedUrl(product.imagePath, 60 * 60)
+    return signed?.signedUrl ? { ...product, imageUrl: signed.signedUrl } : product
+  }))
+  writeCache(merchProductsKey, products)
+  return products
 }
 
 export async function saveMerchProduct(product: MerchProduct): Promise<MerchProduct> {
   if (!supabase) { const all = await listMerchProducts(); localStorage.setItem(merchProductsKey, JSON.stringify([...all.filter((item) => item.id !== product.id), product])); return product }
   if (offline()) { const all = readCache<MerchProduct>(merchProductsKey); const previous = all.find((item) => item.id === product.id) ?? null; writeCache(merchProductsKey, [...all.filter((item) => item.id !== product.id), product]); queueData('product', 'save', product, previous, true); return product }
-  const { data, error } = await supabase.from('merch_products').upsert({ id: product.id, band_id: await bandId(), name: product.name.trim(), price: product.price, stock: product.stock, active: product.active, sizes: product.sizes || [] }).select('*').single()
+  const { data, error } = await supabase.from('merch_products').upsert({ id: product.id, band_id: await bandId(), name: product.name.trim(), price: product.price, stock: product.stock, active: product.active, sizes: product.sizes || [], image_path: product.imagePath ?? null }).select('*').single()
   if (error) throw error
-  const saved = fromMerchProduct(data as MerchProductRow); const all = readCache<MerchProduct>(merchProductsKey); writeCache(merchProductsKey, [...all.filter((item) => item.id !== saved.id), saved]); return saved
+  const savedProduct = fromMerchProduct(data as MerchProductRow)
+  const previous = readCache<MerchProduct>(merchProductsKey).find((item) => item.id === savedProduct.id)
+  const saved = previous && previous.imagePath === savedProduct.imagePath ? { ...savedProduct, imageUrl: previous.imageUrl } : savedProduct
+  const all = readCache<MerchProduct>(merchProductsKey); writeCache(merchProductsKey, [...all.filter((item) => item.id !== saved.id), saved]); return saved
+}
+
+export async function uploadMerchProductImage(productId: string, file: File): Promise<MerchProduct> {
+  if (!supabase) throw new Error('Fes servir la demo local per desar les imatges en aquest navegador.')
+  if (offline()) throw new Error('Connecta’t a internet per pujar una imatge de producte.')
+  if (!['image/webp', 'image/png', 'image/jpeg'].includes(file.type)) throw new Error('Fes servir una imatge WEBP, PNG o JPEG.')
+  if (file.size > 5 * 1024 * 1024) throw new Error('La imatge del producte no pot superar els 5 MB.')
+  const currentBandId = await bandId()
+  const { data: product, error: productError } = await supabase.from('merch_products').select('image_path').eq('id', productId).single()
+  if (productError) throw productError
+  const previousPath = product.image_path as string | null
+  const extension = file.type === 'image/jpeg' ? 'jpg' : file.type.split('/')[1]
+  const path = `${currentBandId}/${productId}/${crypto.randomUUID()}.${extension}`
+  const { error: uploadError } = await supabase.storage.from(merchImageBucket).upload(path, file, { upsert: false, contentType: file.type })
+  if (uploadError) throw storageErrorMessage(uploadError)
+  const { data: updated, error: updateError } = await supabase.from('merch_products').update({ image_path: path }).eq('id', productId).select('*').single()
+  if (updateError) { await supabase.storage.from(merchImageBucket).remove([path]); throw updateError }
+  if (previousPath && previousPath.startsWith(`${currentBandId}/${productId}/`)) void supabase.storage.from(merchImageBucket).remove([previousPath])
+  const { data: signed, error: signedError } = await supabase.storage.from(merchImageBucket).createSignedUrl(path, 60 * 60)
+  if (signedError) throw signedError
+  const saved = { ...fromMerchProduct(updated as MerchProductRow), imageUrl: signed.signedUrl }
+  const all = readCache<MerchProduct>(merchProductsKey)
+  writeCache(merchProductsKey, [...all.filter((item) => item.id !== productId), saved])
+  return saved
+}
+
+export async function removeMerchProductImage(productId: string): Promise<void> {
+  const all = await listMerchProducts()
+  const current = all.find((item) => item.id === productId)
+  if (!current) return
+  if (!supabase) {
+    if (!current.imageDataUrl) return
+    writeCache(merchProductsKey, all.map((item) => item.id === productId ? { ...item, imagePath: undefined, imageUrl: undefined, imageDataUrl: undefined } : item))
+    return
+  }
+  if (!current.imagePath) return
+  if (offline()) throw new Error('Connecta’t a internet per treure la imatge del producte.')
+  const { data: membership, error: membershipError } = await supabase.from('band_members').select('band_id').single()
+  if (membershipError || !membership) throw membershipError ?? new Error('No s’ha trobat l’espai de la banda.')
+  const { error: updateError } = await supabase.from('merch_products').update({ image_path: null }).eq('id', productId)
+  if (updateError) throw updateError
+  const { error: removeError } = await supabase.storage.from(merchImageBucket).remove([current.imagePath])
+  if (removeError) throw removeError
+  writeCache(merchProductsKey, all.map((item) => item.id === productId ? { ...item, imagePath: undefined, imageUrl: undefined, imageDataUrl: undefined } : item))
 }
 
 export async function listMerchSales(): Promise<MerchSale[]> {

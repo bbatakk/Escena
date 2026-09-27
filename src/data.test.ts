@@ -37,6 +37,13 @@ describe('validació de backups', () => {
     expect(validateBackup({ ...emptyBackup, concerts: [concert], library: [{ id: 'doc', name: 'Rider', url: '' }], money: [{ id: 'movement', kind: 'ingres', amount: 10, date: '2026-10-05' }], merchProducts: [{ id: 'product', name: 'CD', price: 10, stock: 5 }], merchSales: [{ id: 'sale', concertId: concert.id, productId: 'product', quantity: 1, unitPrice: 10 }], people: [{ id: 'person', name: 'Músic' }], materials: [{ id: 'material', name: 'Micròfon' }], setlists: [{ id: 'setlist', name: 'Festival', songs: ['Tema'] }] })).toBe(true)
   })
 
+  it('accepta imatges optimitzades del catàleg als backups locals i rebutja URL externes com a imatge', () => {
+    const product = { id: 'shirt', name: 'Samarreta', price: 20, stock: 4, active: true }
+    expect(validateBackup({ ...emptyBackup, merchProducts: [{ ...product, imageDataUrl: 'data:image/webp;base64,UklGRg==' }] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, merchProducts: [{ ...product, imageDataUrl: 'https://example.com/image.webp' }] })).toBe(false)
+    expect(validateBackup({ ...emptyBackup, merchProducts: [{ ...product, imageUrl: 'https://project.supabase.co/storage/v1/object/sign/...' }] })).toBe(false)
+  })
+
   it('accepta backups antics i valida les condicions opcionals de discogràfica', () => {
     expect(validateBackup(emptyBackup)).toBe(true)
     expect(validateBackup({ ...emptyBackup, labelAgreement: { name: 'Segell', tiers: [{ above: 500, percent: 15 }] } })).toBe(true)
