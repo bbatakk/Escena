@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { concertSettlement, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails, validateLabelAgreement } from './model'
+import { concertSettlement, totalMerchRevenue, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails, validateLabelAgreement } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -341,17 +341,15 @@ async function syncLocalConcertIncome(concert: Concert, currentLabel?: LabelAgre
   writeLocalGeneratedMovement('concert_fee', concert.id, !settlement.unresolved && settlement.netPaid > 0 ? {
     concertId: concert.id, kind: 'ingres', amount: settlement.netPaid, date: localToday(), category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
   } : null)
-  const hasDetailedSales = (await listMerchSales()).some((sale) => sale.concertId === concert.id)
-  writeLocalGeneratedMovement('legacy_merch', concert.id, !hasDetailedSales && concert.details.merchSales > 0 ? {
-    concertId: concert.id, kind: 'ingres', amount: concert.details.merchSales, date: concert.date || localToday(), category: 'Marxandatge (resum antic)', note: `Generat automàticament · Resum de vendes · ${concert.title}`,
-  } : null)
+  await syncLocalMerchTotalMovement()
 }
 
-function syncSaleIncomeMovement(sale: MerchSale): void {
-  writeLocalGeneratedMovement('merch_sale', sale.id, sale.quantity * sale.unitPrice > 0 ? {
-    concertId: sale.concertId, kind: 'ingres', amount: sale.quantity * sale.unitPrice,
-    date: sale.createdAt?.slice(0, 10) || localToday(), category: 'Marxandatge',
-    note: `Generat automàticament · ${sale.note || 'Venda de marxandatge'}`,
+async function syncLocalMerchTotalMovement(): Promise<void> {
+  const [concerts, sales] = await Promise.all([listConcerts(), listMerchSales()])
+  const amount = totalMerchRevenue(concerts, sales)
+  writeLocalGeneratedMovement('merch_total', 'local-band', amount > 0 ? {
+    kind: 'ingres', amount, date: localToday(), category: 'Marxandatge',
+    note: `Generat automàticament · Total de ${sales.reduce((sum, sale) => sum + sale.quantity, 0)} unitats venudes`,
   } : null)
 }
 
@@ -668,11 +666,10 @@ export async function discardOfflineDataChange(id: string, entity: OfflineDataEn
   }
   if (entity === 'sale') {
     const sale = operation.base as MerchSale | null | undefined
-    if (sale) syncSaleIncomeMovement(sale)
-    else writeLocalGeneratedMovement('merch_sale', id, null)
     const concertId = sale?.concertId || (operation.payload as MerchSale | null)?.concertId
     const concert = concertId ? (await listConcerts()).find((item) => item.id === concertId) : undefined
     if (concert) await syncLocalConcertIncome(concert)
+    else await syncLocalMerchTotalMovement()
   }
   writeCache(offlineDataQueueKey, remaining)
   clearOfflineError(`${entity}:${id}`)
@@ -925,8 +922,8 @@ export async function listMerchSales(): Promise<MerchSale[]> {
 }
 
 export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
-  if (!supabase) { const all = await listMerchSales(); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; localStorage.setItem(merchSalesKey, JSON.stringify([saved, ...all.filter((item) => item.id !== saved.id)])); syncSaleIncomeMovement(saved); return saved }
-  if (offline()) { const all = readCache<MerchSale>(merchSalesKey); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); queueData('sale', 'save', saved); syncSaleIncomeMovement(saved); const concert = (await listConcerts()).find((item) => item.id === saved.concertId); if (concert) await syncLocalConcertIncome(concert); return saved }
+  if (!supabase) { const all = await listMerchSales(); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; localStorage.setItem(merchSalesKey, JSON.stringify([saved, ...all.filter((item) => item.id !== saved.id)])); await syncLocalMerchTotalMovement(); return saved }
+  if (offline()) { const all = readCache<MerchSale>(merchSalesKey); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); queueData('sale', 'save', saved); await syncLocalMerchTotalMovement(); return saved }
   const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim(), size: sale.size || null }).select('*').single()
   if (error) {
     // An insert may have reached Postgres even when the client lost the response. Reuse its UUID as an idempotency key.
@@ -935,19 +932,19 @@ export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
     const saved = fromMerchSale(alreadySaved as MerchSaleRow)
     const all = readCache<MerchSale>(merchSalesKey)
     writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)])
-    syncSaleIncomeMovement(saved)
+    await syncLocalMerchTotalMovement()
     return saved
   }
-  const saved = fromMerchSale(data as MerchSaleRow); const all = readCache<MerchSale>(merchSalesKey); writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); syncSaleIncomeMovement(saved); return saved
+  const saved = fromMerchSale(data as MerchSaleRow); const all = readCache<MerchSale>(merchSalesKey); writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); await syncLocalMerchTotalMovement(); return saved
 }
 
 export async function deleteMerchSale(id: string): Promise<void> {
-  if (!supabase) { const all = await listMerchSales(); const previous = all.find((item) => item.id === id); localStorage.setItem(merchSalesKey, JSON.stringify(all.filter((item) => item.id !== id))); writeLocalGeneratedMovement('merch_sale', id, null); if (previous) { const concert = (await listConcerts()).find((item) => item.id === previous.concertId); if (concert) await syncLocalConcertIncome(concert) }; return }
-  if (offline()) { const all = readCache<MerchSale>(merchSalesKey); const previous = all.find((item) => item.id === id) ?? null; writeCache(merchSalesKey, all.filter((item) => item.id !== id)); queueData('sale', 'delete', id, previous, true); writeLocalGeneratedMovement('merch_sale', id, null); if (previous) { const concert = (await listConcerts()).find((item) => item.id === previous.concertId); if (concert) await syncLocalConcertIncome(concert) }; return }
+  if (!supabase) { const all = await listMerchSales(); localStorage.setItem(merchSalesKey, JSON.stringify(all.filter((item) => item.id !== id))); await syncLocalMerchTotalMovement(); return }
+  if (offline()) { const all = readCache<MerchSale>(merchSalesKey); const previous = all.find((item) => item.id === id) ?? null; writeCache(merchSalesKey, all.filter((item) => item.id !== id)); queueData('sale', 'delete', id, previous, true); await syncLocalMerchTotalMovement(); return }
   const { error } = await supabase.from('merch_sales').delete().eq('id', id)
   if (error) throw error
   writeCache(merchSalesKey, readCache<MerchSale>(merchSalesKey).filter((item) => item.id !== id))
-  writeLocalGeneratedMovement('merch_sale', id, null)
+  await syncLocalMerchTotalMovement()
 }
 
 function missingAutomaticMovementColumns(error: { code?: string; message?: string }): boolean {

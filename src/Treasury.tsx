@@ -40,7 +40,9 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
   }
 
   const recordedSources = new Set(movements.filter((item) => item.sourceType && item.sourceId).map((item) => `${item.sourceType}:${item.sourceId}`))
-  const automaticMovements = generatedIncomeMovements(concerts, labelAgreement, merchSales).filter((item) => !item.sourceType || !item.sourceId || !recordedSources.has(`${item.sourceType}:${item.sourceId}`))
+  const automaticMovements = generatedIncomeMovements(concerts, labelAgreement, merchSales).filter((item) => item.sourceType === 'merch_total'
+    ? !movements.some((saved) => saved.sourceType === 'merch_total')
+    : !item.sourceType || !item.sourceId || !recordedSources.has(`${item.sourceType}:${item.sourceId}`))
   const displayedMovements = [...automaticMovements, ...movements]
   const income = displayedMovements.filter((item) => item.kind === 'ingres').reduce((sum, item) => sum + item.amount, 0)
   const totalIncome = income

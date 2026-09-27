@@ -77,7 +77,7 @@ export interface MoneyMovement {
   date: string
   category: string
   note: string
-  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch'
+  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total'
   sourceId?: string
 }
 
@@ -178,7 +178,6 @@ export interface Concert {
 
 export function generatedIncomeMovements(concerts: Concert[], label: LabelAgreement | null, sales: MerchSale[], today = new Date().toISOString().slice(0, 10)): MoneyMovement[] {
   const generated: MoneyMovement[] = []
-  const detailedConcertIds = new Set(sales.map((sale) => sale.concertId))
   for (const concert of concerts) {
     const settlement = concertSettlement(concert, label)
     if (!settlement.unresolved && settlement.netPaid > 0) generated.push({
@@ -186,16 +185,11 @@ export function generatedIncomeMovements(concerts: Concert[], label: LabelAgreem
       concertId: concert.id, kind: 'ingres', amount: settlement.netPaid,
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
     })
-    if (!detailedConcertIds.has(concert.id) && concert.details.merchSales > 0) generated.push({
-      id: `automatic:legacy-merch:${concert.id}`, sourceType: 'legacy_merch', sourceId: concert.id,
-      concertId: concert.id, kind: 'ingres', amount: concert.details.merchSales,
-      date: concert.date || today, category: 'Marxandatge (resum antic)', note: `Generat automàticament · Resum de vendes · ${concert.title}`,
-    })
   }
-  for (const sale of sales) if (sale.quantity * sale.unitPrice > 0) generated.push({
-    id: `automatic:merch-sale:${sale.id}`, sourceType: 'merch_sale', sourceId: sale.id,
-    concertId: sale.concertId, kind: 'ingres', amount: sale.quantity * sale.unitPrice,
-    date: sale.createdAt?.slice(0, 10) || today, category: 'Marxandatge', note: `Generat automàticament · ${sale.note || 'Venda de marxandatge'}`,
+  const merchTotal = totalMerchRevenue(concerts, sales)
+  if (merchTotal > 0) generated.push({
+    id: 'automatic:merch-total', sourceType: 'merch_total', sourceId: 'local-band',
+    kind: 'ingres', amount: merchTotal, date: today, category: 'Marxandatge', note: `Generat automàticament · Total de ${sales.length} vendes`,
   })
   return generated
 }

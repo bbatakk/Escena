@@ -154,14 +154,13 @@ describe('tancament econòmic del concert', () => {
 })
 
 describe('moviments d’ingressos automàtics', () => {
-  it('projecta catxets nets, vendes i resums antics com a moviments diferenciats', () => {
+  it('projecta el catxet net i agrupa totes les vendes en un únic moviment', () => {
     const paid = newConcert(); paid.id = 'paid'; paid.feePaid = 600; paid.details.management = 'discografica'; paid.details.labelAgreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }] }
     const legacy = newConcert(); legacy.id = 'legacy'; legacy.details.merchSales = 25
     const sales = [{ id: 'sale', concertId: paid.id, productId: 'cd', quantity: 2, unitPrice: 10, note: '', createdAt: '2026-10-05T10:00:00.000Z' }]
     expect(generatedIncomeMovements([paid, legacy], null, sales, '2026-10-06')).toMatchObject([
       { sourceType: 'concert_fee', sourceId: 'paid', amount: 510, kind: 'ingres' },
-      { sourceType: 'legacy_merch', sourceId: 'legacy', amount: 25, kind: 'ingres' },
-      { sourceType: 'merch_sale', sourceId: 'sale', amount: 20, date: '2026-10-05', kind: 'ingres' },
+      { sourceType: 'merch_total', sourceId: 'local-band', amount: 45, date: '2026-10-06', kind: 'ingres' },
     ])
   })
 })
