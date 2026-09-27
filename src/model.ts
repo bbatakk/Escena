@@ -191,14 +191,14 @@ export interface Concert {
   details: ConcertDetails
 }
 
-export interface PosterConcert { id: string; date: string; title: string; city: string; venue: string; hidden: boolean; past: boolean }
+export interface PosterConcert { id: string; date: string; title: string; city: string; hidden: boolean; past: boolean }
 
 export function posterConcerts(concerts: Concert[], today: string): PosterConcert[] {
   return concerts.filter((concert) => (concert.status === 'confirmat' || concert.status === 'realitzat') && /^\d{4}-\d{2}-\d{2}$/.test(concert.date))
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
     .map((concert) => concert.details.announceable === true
-      ? { id: concert.id, date: concert.date, title: concert.title, city: concert.city, venue: concert.venue, hidden: false, past: concert.date < today }
-      : { id: concert.id, date: concert.date, title: 'Per anunciar', city: '', venue: '', hidden: true, past: concert.date < today })
+      ? { id: concert.id, date: concert.date, title: concert.title, city: concert.city, hidden: false, past: concert.date < today }
+      : { id: concert.id, date: concert.date, title: 'Per anunciar', city: '', hidden: true, past: concert.date < today })
 }
 
 export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgreement | null, sales: MerchSale[], today = new Date().toISOString().slice(0, 10)): MoneyMovement[] {

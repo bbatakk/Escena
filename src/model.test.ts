@@ -156,15 +156,16 @@ describe('tancament econòmic del concert', () => {
 describe('cartell de gira', () => {
   it('publica només concerts confirmats i protegeix els que encara no es poden anunciar', () => {
     const hidden = newConcert(); hidden.id = 'hidden'; hidden.date = '2026-10-04'; hidden.status = 'confirmat'; hidden.title = 'Secret'; hidden.city = 'Girona'; hidden.venue = 'Sala secreta'
-    const publicGig = newConcert(); publicGig.id = 'public'; publicGig.date = '2026-10-06'; publicGig.status = 'confirmat'; publicGig.details.announceable = true; publicGig.title = 'Festa'; publicGig.city = 'Reus'
+    const publicGig = newConcert(); publicGig.id = 'public'; publicGig.date = '2026-10-06'; publicGig.status = 'confirmat'; publicGig.details.announceable = true; publicGig.title = 'Festa'; publicGig.city = 'Reus'; publicGig.venue = 'Sala pública'
     const past = newConcert(); past.id = 'past'; past.date = '2026-09-01'; past.status = 'realitzat'; past.details.announceable = true
     const unconfirmed = newConcert(); unconfirmed.status = 'reservat'; unconfirmed.date = '2026-10-05'
     const cancelled = newConcert(); cancelled.status = 'cancel·lat'; cancelled.date = '2026-10-05'
     const result = posterConcerts([publicGig, cancelled, hidden, unconfirmed, past], '2026-10-05')
     expect(result.map((item) => item.id)).toEqual(['past', 'hidden', 'public'])
-    expect(result[1]).toEqual({ id: 'hidden', date: '2026-10-04', title: 'Per anunciar', city: '', venue: '', hidden: true, past: true })
+    expect(result[1]).toEqual({ id: 'hidden', date: '2026-10-04', title: 'Per anunciar', city: '', hidden: true, past: true })
     expect(result[2]).toMatchObject({ title: 'Festa', city: 'Reus', past: false })
     expect(JSON.stringify(result)).not.toContain('Sala secreta')
+    expect(JSON.stringify(result)).not.toContain('Sala pública')
   })
 })
 

@@ -111,53 +111,51 @@ export function drawPoster(canvas: HTMLCanvasElement, design: PosterDesign, conc
     const x = grid ? 76 + index % 2 * 474 : 76
     const y = rowTop + Math.floor(grid ? index / 2 : index) * rowHeight
     const itemWidth = grid ? 452 : 928
+    const rowForeground = concert.past ? '#969ba4' : design.foreground
+    const rowAccent = concert.past ? '#858c96' : design.accent
     if (grid) {
-      ctx.fillStyle = design.foreground
+      ctx.fillStyle = rowForeground
       ctx.globalAlpha = 0.08
       ctx.fillRect(x, y, itemWidth, rowHeight - 12)
       ctx.globalAlpha = 1
     } else {
-      ctx.fillStyle = design.foreground
-      ctx.globalAlpha = 0.24
+      ctx.fillStyle = rowForeground
+      ctx.globalAlpha = concert.past ? 0.12 : 0.24
       ctx.fillRect(x, y + rowHeight - 11, itemWidth, 1)
       ctx.globalAlpha = 1
     }
 
     if (design.layout === 'columna') {
-      ctx.fillStyle = design.accent
+      ctx.fillStyle = rowAccent
       ctx.font = '600 29px "IBM Plex Mono", monospace'
       ctx.fillText(dateLabel(concert.date), x + 8, y + 20)
-      ctx.fillStyle = design.foreground
+      ctx.fillStyle = rowForeground
       ctx.font = `700 ${design.fontSize}px ${display}`
-      ctx.fillText(fit(ctx, concert.hidden ? 'PER ANUNCIAR' : concert.city || concert.title, 680), x + 240, y + 14)
-      if (!concert.hidden) {
+      ctx.fillText(fit(ctx, concert.hidden ? 'PER ANUNCIAR' : concert.title, 680), x + 240, y + 14)
+      if (!concert.hidden && concert.city) {
+        ctx.fillStyle = rowForeground
+        ctx.globalAlpha = 0.76
         ctx.font = '500 23px "Space Grotesk", sans-serif'
-        ctx.fillText(fit(ctx, [concert.venue, concert.city ? concert.title : ''].filter(Boolean).join(' · '), 680), x + 241, y + 20 + design.fontSize)
+        ctx.fillText(fit(ctx, concert.city, 680), x + 241, y + 20 + design.fontSize)
+        ctx.globalAlpha = 1
       }
     } else {
       const textX = x + (grid ? 22 : 8)
       const textY = y + (grid ? 14 : 12)
-      ctx.fillStyle = design.accent
+      ctx.fillStyle = rowAccent
       ctx.font = '600 26px "IBM Plex Mono", monospace'
       ctx.fillText(dateLabel(concert.date), textX, textY)
-      ctx.fillStyle = design.foreground
+      ctx.fillStyle = rowForeground
       ctx.font = `700 ${design.fontSize}px ${display}`
-      const line = concert.hidden ? 'PER ANUNCIAR' : [concert.city, concert.title].filter(Boolean).join(' · ')
+      const line = concert.hidden ? 'PER ANUNCIAR' : concert.title
       ctx.fillText(fit(ctx, line, itemWidth - (grid ? 44 : 24)), textX, textY + 34)
-      if (!concert.hidden && concert.venue) {
+      if (!concert.hidden && concert.city) {
+        ctx.fillStyle = rowForeground
+        ctx.globalAlpha = 0.76
         ctx.font = '500 22px "Space Grotesk", sans-serif'
-        ctx.fillText(fit(ctx, concert.venue, itemWidth - (grid ? 44 : 24)), textX, textY + 42 + design.fontSize)
+        ctx.fillText(fit(ctx, concert.city, itemWidth - (grid ? 44 : 24)), textX, textY + 42 + design.fontSize)
+        ctx.globalAlpha = 1
       }
-    }
-    if (concert.past) {
-      ctx.strokeStyle = design.accent
-      ctx.lineWidth = 4
-      ctx.globalAlpha = 0.9
-      ctx.beginPath()
-      ctx.moveTo(x + 8, y + rowHeight * 0.52)
-      ctx.lineTo(x + itemWidth - 10, y + rowHeight * 0.52)
-      ctx.stroke()
-      ctx.globalAlpha = 1
     }
   })
 
