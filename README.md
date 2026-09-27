@@ -63,3 +63,5 @@ npm run build
 - `AGENTS.md`: guia curta per a eines de desenvolupament amb IA.
 
 Per a l’assistent, configura també el secret `APP_ORIGIN` amb l’origen HTTPS exacte del web (per exemple, `supabase secrets set APP_ORIGIN=https://escena.vercel.app`, sense barra final). La funció d’IA rebutja les peticions del navegador des d’altres orígens.
+
+Abans de desplegar la versió que crea moviments automàtics per catxets i vendes, executa `supabase/migrations/202609270001_automatic_income_movements.sql` a l’SQL Editor. La migració crea els moviments d’ingressos existents, els sincronitza amb els canvis de catxet i venda i impedeix editar-los com si fossin moviments manuals. En mode demo local, els moviments es calculen des de les dades guardades en aquest navegador.

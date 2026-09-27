@@ -448,7 +448,7 @@ export default function App() {
   }
   function startFormOnDate(date: string) { const concert = newConcert(); concert.date = date; startForm(concert, false) }
   async function save(item: Concert, navigateAfterSave = true) {
-    const saved = await saveConcert(item)
+    const saved = await saveConcert(item, labelAgreement)
     formExitApprovedRef.current = true
     updateFormDirty(false)
     const previous = concerts.find((existing) => existing.id === saved.id)
@@ -479,7 +479,7 @@ export default function App() {
   async function toggleMaterial(id: string) {
     if (!selected) return
     const changed: Concert = { ...selected, details: { ...selected.details, materials: selected.details.materials.map((item) => item.id === id ? { ...item, loaded: !item.loaded } : item) } }
-    const saved = await saveConcert(changed)
+    const saved = await saveConcert(changed, labelAgreement)
     setConcerts((prev) => prev.map((item) => item.id === saved.id ? saved : item))
   }
   async function uploadDocument(id: string, file: File) {
@@ -492,7 +492,7 @@ export default function App() {
     const doc = selected.details.documents.find((item) => item.id === id)
     if (!doc?.storagePath) return
     const changed: Concert = { ...selected, details: { ...selected.details, documents: selected.details.documents.map((item) => item.id === id ? { ...item, storagePath: undefined, fileName: undefined } : item) } }
-    const saved = await saveConcert(changed)
+    const saved = await saveConcert(changed, labelAgreement)
     setConcerts((prev) => prev.map((item) => item.id === saved.id ? saved : item))
     if (isConcertOwnedFile(selected, doc.storagePath)) void removeConcertDocumentFile(doc.storagePath).catch(() => {})
   }
@@ -519,10 +519,11 @@ export default function App() {
     }
   }
 
-  function discardFailedOfflineData(item: OfflineSyncItem) {
+  async function discardFailedOfflineData(item: OfflineSyncItem) {
     if (!item.entity || !window.confirm(`Vols descartar el canvi local de «${item.label}»?`)) return
-    discardOfflineDataChange(item.id, item.entity)
+    await discardOfflineDataChange(item.id, item.entity)
     setOfflineSyncStatus(getOfflineSyncStatus())
+    if (cloudConfigured && session) setConcerts(await listConcerts())
   }
 
   return <div className={`app-layout ${themeClass(theme)}`}>
@@ -533,7 +534,7 @@ export default function App() {
     {menuOpen ? <button className="mobile-overlay" aria-label="Tancar menú" onClick={() => setMenuOpen(false)} /> : null}
       <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'home' ? 'Inici' : screen === 'calendar' ? 'Calendari' : screen === 'assistant' ? 'IA' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : screen === 'treasury' ? 'Tresoreria' : screen === 'merch' ? 'Marxandatge' : screen === 'people' ? 'Persones' : screen === 'materials' ? 'Material' : screen === 'setlists' ? 'Setlists' : screen === 'settings' ? 'Configuració' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? (online ? 'EN LÍNIA' : 'SENSE CONNEXIÓ') : 'DEMO LOCAL'} <span className={`online-dot ${online ? '' : 'offline-dot'}`} /></span></header>
       <div className="content-area">
-        {cloudConfigured && offlineSyncStatus.pending > 0 ? <section className={`offline-sync-panel ${offlineSyncStatus.failed ? 'offline-sync-failed' : ''}`} aria-live="polite"><div className="offline-sync-heading"><div><strong>{offlineSyncStatus.failed ? 'Canvis pendents de sincronitzar' : online ? 'Sincronitzant canvis' : 'Canvis desats en aquest dispositiu'}</strong><small>{offlineSyncStatus.failed ? `${offlineSyncStatus.failed} de ${offlineSyncStatus.pending} canvis necessiten atenció.` : `${offlineSyncStatus.pending} ${offlineSyncStatus.pending === 1 ? 'canvi pendent' : 'canvis pendents'}.`}</small></div>{online ? <button type="button" className="button button-secondary" onClick={() => void retryOfflineSync()}>Torna-ho a provar</button> : null}</div>{offlineSyncStatus.items.slice(0, 5).map((item) => <div className="offline-sync-item" key={item.key}><div><strong>{item.label}</strong>{item.message ? <small>{item.message}</small> : null}</div>{item.conflict && online && (item.kind === 'concert' || item.entity === 'money' || item.entity === 'product' || item.entity === 'resource') ? <div className="offline-conflict-actions"><button type="button" onClick={() => void chooseConflictVersion(item, 'local')}>Conservar els meus canvis</button><button type="button" onClick={() => void chooseConflictVersion(item, 'server')}>Fer servir la versió del servidor</button></div> : item.message && item.kind === 'data' && online ? <div className="offline-conflict-actions"><button type="button" onClick={() => discardFailedOfflineData(item)}>Descartar aquest canvi</button></div> : null}</div>)}{offlineSyncStatus.pending > 5 ? <small className="offline-sync-more">I {offlineSyncStatus.pending - 5} canvis més a la cua.</small> : null}</section> : null}
+        {cloudConfigured && offlineSyncStatus.pending > 0 ? <section className={`offline-sync-panel ${offlineSyncStatus.failed ? 'offline-sync-failed' : ''}`} aria-live="polite"><div className="offline-sync-heading"><div><strong>{offlineSyncStatus.failed ? 'Canvis pendents de sincronitzar' : online ? 'Sincronitzant canvis' : 'Canvis desats en aquest dispositiu'}</strong><small>{offlineSyncStatus.failed ? `${offlineSyncStatus.failed} de ${offlineSyncStatus.pending} canvis necessiten atenció.` : `${offlineSyncStatus.pending} ${offlineSyncStatus.pending === 1 ? 'canvi pendent' : 'canvis pendents'}.`}</small></div>{online ? <button type="button" className="button button-secondary" onClick={() => void retryOfflineSync()}>Torna-ho a provar</button> : null}</div>{offlineSyncStatus.items.slice(0, 5).map((item) => <div className="offline-sync-item" key={item.key}><div><strong>{item.label}</strong>{item.message ? <small>{item.message}</small> : null}</div>{item.conflict && online && (item.kind === 'concert' || item.entity === 'money' || item.entity === 'product' || item.entity === 'resource') ? <div className="offline-conflict-actions"><button type="button" onClick={() => void chooseConflictVersion(item, 'local')}>Conservar els meus canvis</button><button type="button" onClick={() => void chooseConflictVersion(item, 'server')}>Fer servir la versió del servidor</button></div> : item.message && item.kind === 'data' && online ? <div className="offline-conflict-actions"><button type="button" onClick={() => void discardFailedOfflineData(item).catch((cause) => setError(cause instanceof Error ? cause.message : 'No s’ha pogut descartar el canvi.'))}>Descartar aquest canvi</button></div> : null}</div>)}{offlineSyncStatus.pending > 5 ? <small className="offline-sync-more">I {offlineSyncStatus.pending - 5} canvis més a la cua.</small> : null}</section> : null}
         {error ? <div className="global-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Tancar avís"><X size={16} /></button></div> : null}
          {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
          {loading ? <div className="content-loading">Carregant concerts…</div> : null}

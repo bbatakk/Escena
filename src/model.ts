@@ -77,6 +77,8 @@ export interface MoneyMovement {
   date: string
   category: string
   note: string
+  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch'
+  sourceId?: string
 }
 
 export interface MerchProduct {
@@ -101,6 +103,7 @@ export interface MerchSale {
   unitPrice: number
   note: string
   size?: string
+  createdAt?: string
 }
 
 export function merchRevenueByConcert(concerts: Concert[], sales: MerchSale[]): Map<string, number> {
@@ -173,6 +176,30 @@ export interface Concert {
   details: ConcertDetails
 }
 
+export function generatedIncomeMovements(concerts: Concert[], label: LabelAgreement | null, sales: MerchSale[], today = new Date().toISOString().slice(0, 10)): MoneyMovement[] {
+  const generated: MoneyMovement[] = []
+  const detailedConcertIds = new Set(sales.map((sale) => sale.concertId))
+  for (const concert of concerts) {
+    const settlement = concertSettlement(concert, label)
+    if (!settlement.unresolved && settlement.netPaid > 0) generated.push({
+      id: `automatic:concert-fee:${concert.id}`, sourceType: 'concert_fee', sourceId: concert.id,
+      concertId: concert.id, kind: 'ingres', amount: settlement.netPaid,
+      date: concert.updatedAt?.slice(0, 10) || today, category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
+    })
+    if (!detailedConcertIds.has(concert.id) && concert.details.merchSales > 0) generated.push({
+      id: `automatic:legacy-merch:${concert.id}`, sourceType: 'legacy_merch', sourceId: concert.id,
+      concertId: concert.id, kind: 'ingres', amount: concert.details.merchSales,
+      date: concert.date || today, category: 'Marxandatge (resum antic)', note: `Generat automàticament · Resum de vendes · ${concert.title}`,
+    })
+  }
+  for (const sale of sales) if (sale.quantity * sale.unitPrice > 0) generated.push({
+    id: `automatic:merch-sale:${sale.id}`, sourceType: 'merch_sale', sourceId: sale.id,
+    concertId: sale.concertId, kind: 'ingres', amount: sale.quantity * sale.unitPrice,
+    date: sale.createdAt?.slice(0, 10) || today, category: 'Marxandatge', note: `Generat automàticament · ${sale.note || 'Venda de marxandatge'}`,
+  })
+  return generated
+}
+
 export interface ConcertClosingSummary {
   netFee: number
   merchRevenue: number
@@ -185,7 +212,7 @@ export interface ConcertClosingSummary {
 
 export function concertClosingSummary(concert: Concert, label: LabelAgreement | null, allSales: MerchSale[], allMovements: MoneyMovement[]): ConcertClosingSummary {
   const sales = allSales.filter((sale) => sale.concertId === concert.id)
-  const movements = allMovements.filter((movement) => movement.concertId === concert.id)
+  const movements = allMovements.filter((movement) => movement.concertId === concert.id && !movement.sourceType)
   const manualIncome = movements.filter((movement) => movement.kind === 'ingres').reduce((sum, movement) => sum + movement.amount, 0)
   const expenseMovements = movements.filter((movement) => movement.kind === 'despesa')
   const manualExpenses = expenseMovements.reduce((sum, movement) => sum + movement.amount, 0)

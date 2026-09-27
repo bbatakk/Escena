@@ -185,7 +185,7 @@ async function loadActionContext(concerts: Concert[], workspaceName: string): Pr
     listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), listBandDocuments(),
     listMoneyMovements(), listMerchProducts(), listMerchSales(),
   ])
-  return { concerts, workspaceName, theme: localStorage.getItem('escena-theme') || 'live-stage', people, materials, setlists, documents, money, products, sales }
+  return { concerts, workspaceName, theme: localStorage.getItem('escena-theme') || 'live-stage', people, materials, setlists, documents, money: money.filter((item) => !item.sourceType), products, sales }
 }
 
 async function applyAppAction(action: AppAction, context: ActionContext, onWorkspaceNameChange: (name: string) => void, onThemeChange: (theme: ThemeId) => void): Promise<void> {

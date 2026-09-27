@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commissionRate, concertClosingSummary, concertSettlement, getPending, merchRevenueByConcert, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
+import { commissionRate, concertClosingSummary, concertSettlement, generatedIncomeMovements, getPending, merchRevenueByConcert, newConcert, shouldMarkConcertRealized, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement } from './model'
 
 describe('discogràfica i liquidació del catxet', () => {
   const agreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }, { above: 1000, percent: 20 }] }
@@ -136,6 +136,8 @@ describe('tancament econòmic del concert', () => {
     const summary = concertClosingSummary(concert, null,
       [{ id: 'sale-1', concertId: concert.id, productId: 'shirt', quantity: 2, unitPrice: 15, note: '' }],
       [
+        { id: 'auto-fee', concertId: concert.id, kind: 'ingres', amount: 500, date: '2026-10-05', category: 'Catxet', note: '', sourceType: 'concert_fee', sourceId: concert.id },
+        { id: 'auto-sale', concertId: concert.id, kind: 'ingres', amount: 30, date: '2026-10-05', category: 'Marxandatge', note: '', sourceType: 'merch_sale', sourceId: 'sale-1' },
         { id: 'income-1', concertId: concert.id, kind: 'ingres', amount: 25, date: '2026-10-05', category: 'Aportació', note: '' },
         { id: 'expense-1', concertId: concert.id, kind: 'despesa', amount: 12, date: '2026-10-05', category: 'Gasolina', note: '' },
       ])
@@ -148,6 +150,19 @@ describe('tancament econòmic del concert', () => {
     concert.details.merchSales = 42
     concert.details.expenses = 18
     expect(concertClosingSummary(concert, null, [], [])).toMatchObject({ merchRevenue: 42, usesDetailedSales: false, legacyExpenses: 18, balance: 24 })
+  })
+})
+
+describe('moviments d’ingressos automàtics', () => {
+  it('projecta catxets nets, vendes i resums antics com a moviments diferenciats', () => {
+    const paid = newConcert(); paid.id = 'paid'; paid.feePaid = 600; paid.details.management = 'discografica'; paid.details.labelAgreement = { name: 'Segell', tiers: [{ above: 500, percent: 15 }] }
+    const legacy = newConcert(); legacy.id = 'legacy'; legacy.details.merchSales = 25
+    const sales = [{ id: 'sale', concertId: paid.id, productId: 'cd', quantity: 2, unitPrice: 10, note: '', createdAt: '2026-10-05T10:00:00.000Z' }]
+    expect(generatedIncomeMovements([paid, legacy], null, sales, '2026-10-06')).toMatchObject([
+      { sourceType: 'concert_fee', sourceId: 'paid', amount: 510, kind: 'ingres' },
+      { sourceType: 'legacy_merch', sourceId: 'legacy', amount: 25, kind: 'ingres' },
+      { sourceType: 'merch_sale', sourceId: 'sale', amount: 20, date: '2026-10-05', kind: 'ingres' },
+    ])
   })
 })
 
