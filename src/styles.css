@@ -221,3 +221,34 @@
 .theme-club.app-layout :where(.account-avatar,.workspace-avatar){background:#b7f34a;color:#11151d}
 .theme-club.app-layout .sidebar-account :where(strong,span){color:#edf2ec}
 .theme-club.app-layout .sidebar-account span{color:#c0ccca}
+
+/* Millora llegibilitat de textos secundaris sobre les superfícies clares dels altres temes. */
+.theme-classic.app-layout :where(.page-heading p,.section-heading p,.settings-card-heading p,.aside-card>p,.aside-label,.section-empty,.timeline-time,.timeline-item p,.document-item small,.document-file,.attached-file-name,.resource-row small,.library-content>.eyebrow,.library-links span,.library-archive-item,.summary-note,.backup-note,.assistant-privacy,.assistant-form-footer>small,.money-row-main small,.merch-product-main small,.merch-product-stats small,.quick-product-stock,.quick-sale-product small,.quick-sale-total small,.calendar-agenda .eyebrow,.calendar-agenda p,.weekday,.concert-year-heading span,.list-label,.money-list-head .eyebrow,.merch-summary .eyebrow){color:#53647a}
+.theme-live-stage.app-layout :where(.page-heading p,.section-heading p,.settings-card-heading p,.aside-card>p,.aside-label,.section-empty,.timeline-time,.timeline-item p,.document-item small,.document-file,.attached-file-name,.resource-row small,.library-content>.eyebrow,.library-links span,.library-archive-item,.summary-note,.backup-note,.assistant-privacy,.assistant-form-footer>small,.money-row-main small,.merch-product-main small,.merch-product-stats small,.quick-product-stock,.quick-sale-product small,.quick-sale-total small,.calendar-agenda .eyebrow,.calendar-agenda p,.weekday,.concert-year-heading span,.list-label,.money-list-head .eyebrow,.merch-summary .eyebrow){color:#574d50}
+.theme-paper.app-layout :where(.page-heading p,.section-heading p,.settings-card-heading p,.aside-card>p,.aside-label,.section-empty,.timeline-time,.timeline-item p,.document-item small,.document-file,.attached-file-name,.resource-row small,.library-content>.eyebrow,.library-links span,.library-archive-item,.summary-note,.backup-note,.assistant-privacy,.assistant-form-footer>small,.money-row-main small,.merch-product-main small,.merch-product-stats small,.quick-product-stock,.quick-sale-product small,.quick-sale-total small,.calendar-agenda .eyebrow,.calendar-agenda p,.weekday,.concert-year-heading span,.list-label,.money-list-head .eyebrow,.merch-summary .eyebrow){color:#5c4d40}
+.theme-classic.app-layout :where(.field input::placeholder,.field textarea::placeholder,.repeat-row input::placeholder,.search-box input::placeholder,.quick-sale-search input::placeholder){color:#65758b}
+.theme-live-stage.app-layout :where(.field input::placeholder,.field textarea::placeholder,.repeat-row input::placeholder,.search-box input::placeholder,.quick-sale-search input::placeholder){color:#6c5e5c}
+.theme-paper.app-layout :where(.field input::placeholder,.field textarea::placeholder,.repeat-row input::placeholder,.search-box input::placeholder,.quick-sale-search input::placeholder){color:#70604f}
+.theme-classic.app-layout .section-index{color:#40558f}
+.theme-live-stage.app-layout .section-index{color:#813b35}
+.theme-paper.app-layout .section-index{color:#794228}
+.theme-classic.app-layout .theme-option-copy small,.theme-live-stage.app-layout .theme-option-copy small,.theme-paper.app-layout .theme-option-copy small{color:#53647a}
+.theme-live-stage.app-layout .heading-period{color:#a44736}
+.theme-paper.app-layout .heading-period{color:#984425}
+.theme-paper.app-layout .button-primary,.theme-paper.app-layout .sidebar-nav button.nav-active{color:#241911;background:#d56b42}
+.theme-paper.app-layout .button-primary:hover:not(:disabled){background:#c45d36;color:#241911}
+.theme-paper.app-layout .sidebar-nav button.nav-active:hover{background:#c45d36;color:#241911}
+.theme-paper.app-layout :where(.status-reservat,.status-en_converses,.status-realitzat,.pending-count,.count-pill){color:#493a2e}
+.theme-paper.app-layout .status-reservat{background:#f5e4c6;color:#674619}
+.theme-paper.app-layout .status-realitzat{background:#dceee2;color:#286044}
+.theme-paper.app-layout .status-en_converses{background:#e5e7e9;color:#4f5965}
+.theme-classic.app-layout .status-reservat{color:#76501b;background:#fff0ce}
+.theme-classic.app-layout .status-realitzat{color:#286044;background:#dff1e7}
+.theme-live-stage.app-layout .status-reservat{color:#76501b;background:#fff0ce}
+.theme-live-stage.app-layout .status-realitzat{color:#286044;background:#dff1e7}
+.theme-classic.app-layout .positive-money,.theme-live-stage.app-layout .positive-money,.theme-paper.app-layout .positive-money{color:#267354}
+.theme-classic.app-layout .negative-money,.theme-live-stage.app-layout .negative-money,.theme-paper.app-layout .negative-money{color:#a33f4c}
+.theme-classic.app-layout :where(.home-next-date small,.home-stat small,.panel-title .eyebrow,.panel-title h2){color:#53647a}
+.theme-live-stage.app-layout :where(.home-next-date small,.home-stat small,.panel-title .eyebrow,.panel-title h2){color:#574d50}
+.theme-paper.app-layout :where(.home-next-date small,.home-stat small,.panel-title .eyebrow,.panel-title h2){color:#5c4d40}
+.theme-classic.app-layout .heading-period{color:#9b5539}
