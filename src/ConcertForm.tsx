@@ -69,8 +69,13 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
 
   function cancelForm() {
     if (dirty && !window.confirm('Hi ha canvis desats només com a esborrany. Vols sortir? Podràs recuperar-los en tornar a obrir aquesta fitxa.')) return
+    if (dirty) {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(concert))
+        if (!initial.updatedAt && !initial.title) localStorage.setItem(newConcertDraftKey, initial.id)
+      } catch { setError('No s’ha pogut guardar l’esborrany en aquest dispositiu.'); return }
+    } else clearDraft()
     onDirtyChange(false)
-    clearDraft()
     setDraftSaved(false)
     onCancel()
   }
@@ -126,7 +131,7 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
 
   return (
     <div className="form-shell">
-      <button type="button" className="text-button back-button" onClick={cancelForm}><ArrowLeft size={17} /> Tornar als concerts</button>
+      <button type="button" className="text-button back-button" onClick={cancelForm}><ArrowLeft size={17} /> {initial.updatedAt ? 'Tornar a la fitxa' : 'Tornar als concerts'}</button>
       <div className="page-heading form-heading">
         <div><span className="eyebrow">FITXA DE CONCERT</span><h1>{initial.title ? 'Editar concert' : 'Nou concert'}</h1></div>
         <p>Omple només la informació que tinguis. La resta pot esperar.</p>
