@@ -3,7 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, Pencil, Plus, Trash2, X } from 'lucide-rea
 import { deleteMoneyMovement, listMerchSales, listMoneyMovements, saveMoneyMovement } from './data'
 import { createId, formatDate, formatMoney, generatedTreasuryMovements, moneyMovementBalance, type Concert, type LabelAgreement, type MerchSale, type MoneyMovement, type MoneyMovementKind, type MoneyMovementPaymentMethod } from './model'
 
-const movementPageSize = 20
+const movementPageSize = 8
 
 function today(): string { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` }
 
