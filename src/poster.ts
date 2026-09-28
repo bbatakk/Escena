@@ -46,6 +46,12 @@ export interface PosterDesign {
   showPast: boolean
 }
 
+export interface PosterTemplate {
+  id: string
+  name: string
+  design: PosterDesign
+}
+
 export const defaultPosterDesign: PosterDesign = {
   format: 'vertical', layout: 'cartell', typeface: 'impacte', order: 'asc', align: 'left', divider: 'line', dateFormat: 'short', imagePosition: 'center', logoPosition: 'right',
   title: 'EN DIRECTE', subtitle: 'DATES DE GIRA', footer: 'ENS VEIEM A LA CARRETERA',
@@ -69,6 +75,82 @@ export const posterAlignList: PosterAlign[] = ['left', 'center']
 export const posterDividerList: PosterDivider[] = ['line', 'block', 'none']
 export const posterDateFormatList: PosterDateFormat[] = ['short', 'numeric', 'year']
 export const posterImagePositionList: PosterImagePosition[] = ['center', 'top', 'bottom']
+
+function oneOf<T extends string>(value: unknown, options: T[], fallback: T): T {
+  return typeof value === 'string' && options.includes(value as T) ? value as T : fallback
+}
+
+function amount(value: unknown, min: number, max: number, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fallback
+}
+
+function flag(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function line(value: unknown, max: number, fallback: string): string {
+  return typeof value === 'string' ? value.slice(0, max) : fallback
+}
+
+function color(value: unknown, fallback: string): string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
+}
+
+export function normalizePosterDesign(value: unknown): PosterDesign {
+  const base = defaultPosterDesign
+  const saved = value && typeof value === 'object' ? value as Partial<PosterDesign> : {}
+  const layout = oneOf(saved.layout, posterLayoutList, base.layout)
+  return {
+    format: oneOf(saved.format, posterFormatList, base.format),
+    layout,
+    typeface: oneOf(saved.typeface, posterTypefaceList, base.typeface),
+    order: oneOf(saved.order, posterOrderList, base.order),
+    align: oneOf(saved.align, posterAlignList, base.align),
+    divider: oneOf(saved.divider, posterDividerList, layout === 'quadrícula' ? 'block' : 'line'),
+    dateFormat: oneOf(saved.dateFormat, posterDateFormatList, base.dateFormat),
+    imagePosition: oneOf(saved.imagePosition, posterImagePositionList, base.imagePosition),
+    logoPosition: oneOf(saved.logoPosition, ['left', 'right'], base.logoPosition),
+    title: line(saved.title, 65, base.title),
+    subtitle: line(saved.subtitle, 65, base.subtitle),
+    footer: line(saved.footer, 90, base.footer),
+    background: color(saved.background, base.background),
+    foreground: color(saved.foreground, base.foreground),
+    accent: color(saved.accent, base.accent),
+    fontSize: amount(saved.fontSize, 30, 64, base.fontSize),
+    spacing: amount(saved.spacing, 0, 35, base.spacing),
+    columns: posterColumns({ ...base, layout, columns: typeof saved.columns === 'number' ? saved.columns : Number.NaN }),
+    columnGap: amount(saved.columnGap, 8, 48, base.columnGap),
+    margin: amount(saved.margin, 40, 110, base.margin),
+    titleSize: amount(saved.titleSize, 40, 130, base.titleSize),
+    bandSize: amount(saved.bandSize, 18, 44, base.bandSize),
+    imageShade: amount(saved.imageShade, 20, 95, base.imageShade),
+    uppercase: flag(saved.uppercase, base.uppercase),
+    rules: flag(saved.rules, base.rules),
+    showLogo: flag(saved.showLogo, base.showLogo),
+    showTitle: flag(saved.showTitle, base.showTitle),
+    showSubtitle: flag(saved.showSubtitle, base.showSubtitle),
+    showBand: flag(saved.showBand, base.showBand),
+    showFooter: flag(saved.showFooter, base.showFooter),
+    showDate: flag(saved.showDate, base.showDate),
+    showName: flag(saved.showName, base.showName),
+    showCity: flag(saved.showCity, base.showCity),
+    showPast: flag(saved.showPast, base.showPast),
+  }
+}
+
+export function parsePosterTemplates(value: string | null): PosterTemplate[] {
+  try {
+    const parsed: unknown = JSON.parse(value || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((item): PosterTemplate[] => {
+      if (!item || typeof item !== 'object') return []
+      const candidate = item as Partial<PosterTemplate>
+      if (typeof candidate.id !== 'string' || typeof candidate.name !== 'string' || !candidate.design || typeof candidate.design !== 'object') return []
+      const name = candidate.name.trim().slice(0, 40)
+      return name ? [{ id: candidate.id.slice(0, 80), name, design: normalizePosterDesign(candidate.design) }] : []
+    }).slice(0, 30)
+  } catch { return [] }
+}
 
 export interface PosterMetrics {
   width: number
@@ -172,7 +254,6 @@ export function drawPoster(canvas: HTMLCanvasElement, design: PosterDesign, conc
   const m = posterMetrics(design)
   const display = fontFor(design)
   const centered = design.align === 'center'
-  const headerX = centered ? m.centerX : m.left
   const headerAlign: CanvasTextAlign = centered ? 'center' : 'left'
 
   const text = (content: string, x: number, y: number, maxWidth: number, font: string, fill: string, alpha = 1, align: CanvasTextAlign = headerAlign): void => {
@@ -198,17 +279,20 @@ export function drawPoster(canvas: HTMLCanvasElement, design: PosterDesign, conc
   }
 
   const showLogo = Boolean(logo?.naturalWidth && design.showLogo)
+  const logoReserve = showLogo ? 150 : 0
+  const safeLeft = m.left + (showLogo && design.logoPosition === 'left' ? logoReserve : 0)
+  const safeRight = m.right - (showLogo && design.logoPosition === 'right' ? logoReserve : 0)
+  const headerX = centered ? (safeLeft + safeRight) / 2 : safeLeft
+  const headerWidth = safeRight - safeLeft
   if (showLogo) {
     const maxSide = 112
     const ratio = Math.min(maxSide / logo!.naturalWidth, maxSide / logo!.naturalHeight)
     ctx.drawImage(logo!, design.logoPosition === 'left' ? m.left : m.right - logo!.naturalWidth * ratio, m.left - 20, logo!.naturalWidth * ratio, logo!.naturalHeight * ratio)
   }
-  const headerWidth = m.contentWidth - (showLogo && !centered ? 150 : 0)
-
   let y = m.left
   if (design.showSubtitle) { text(design.subtitle, headerX, y, headerWidth, '600 23px "IBM Plex Mono", monospace', design.accent); y += 34 }
-  if (design.showTitle) { text(design.title, headerX, y, m.contentWidth - 30, `900 ${design.titleSize}px ${display}`, design.foreground); y += design.titleSize * 1.04 }
-  if (design.showBand) { text(bandName, headerX, y, m.contentWidth - 40, `700 ${design.bandSize}px "Space Grotesk", sans-serif`, design.accent); y += design.bandSize * 1.7 }
+  if (design.showTitle) { text(design.title, headerX, y, headerWidth, `900 ${design.titleSize}px ${display}`, design.foreground); y += design.titleSize * 1.04 }
+  if (design.showBand) { text(bandName, headerX, y, headerWidth, `700 ${design.bandSize}px "Space Grotesk", sans-serif`, design.accent); y += design.bandSize * 1.7 }
   if (design.rules) { ctx.fillStyle = design.accent; ctx.fillRect(m.left, y + 8, m.contentWidth, 3) }
 
   const perColumn = Math.max(1, Math.ceil(concerts.length / m.columns))
@@ -232,7 +316,7 @@ export function drawPoster(canvas: HTMLCanvasElement, design: PosterDesign, conc
     const pad = design.divider === 'block' ? 22 : 8
     const textWidth = m.columnWidth - pad * 2
     const name = concert.hidden ? 'Per anunciar' : concert.title
-    if (design.layout === 'columna' && design.showDate) {
+    if (design.layout === 'columna' && design.showDate && m.columnWidth >= 320) {
       const gutter = Math.min(240, m.columnWidth * 0.42)
       text(dateLabel(concert.date, design.dateFormat), x + 8, top + 20, gutter - 16, '600 29px "IBM Plex Mono", monospace', rowAccent)
       const textX = centered ? x + gutter + (m.columnWidth - gutter) / 2 : x + gutter + 8
@@ -249,6 +333,7 @@ export function drawPoster(canvas: HTMLCanvasElement, design: PosterDesign, conc
   })
 
   if (design.rules) { ctx.fillStyle = design.accent; ctx.fillRect(m.left, m.footerRule, m.contentWidth, 3) }
-  if (design.showFooter) text(design.footer, headerX, m.footerTop, m.contentWidth - 120, '600 20px "IBM Plex Mono", monospace', design.accent)
+  const footerX = centered ? m.centerX : m.left
+  if (design.showFooter) text(design.footer, footerX, m.footerTop, m.contentWidth - (totalPages > 1 ? 220 : 40), '600 20px "IBM Plex Mono", monospace', design.accent)
   if (totalPages > 1) text(`${page + 1} / ${totalPages}`, m.right, m.footerTop, 200, '600 20px "IBM Plex Mono", monospace', design.accent, 1, 'right')
 }

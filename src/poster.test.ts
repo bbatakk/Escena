@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultPosterDesign, posterColumns, posterMetrics, posterPageSize, type PosterDesign } from './poster'
+import { defaultPosterDesign, normalizePosterDesign, parsePosterTemplates, posterColumns, posterMetrics, posterPageSize, type PosterDesign } from './poster'
 
 describe('columnes del cartell de gira', () => {
   const design = (changes: Partial<PosterDesign>): PosterDesign => ({ ...defaultPosterDesign, ...changes })
@@ -57,5 +57,36 @@ describe('mètriques del cartell de gira', () => {
     expect(metrics.left).toBe(40)
     expect(metrics.columnGap).toBe(48)
     expect(metrics.rows).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('plantilles del cartell', () => {
+  it('normalitza plantilles desades i ignora entrades invàlides', () => {
+    const raw = JSON.stringify([
+      { id: 'one', name: '  Festa  ', design: { ...defaultPosterDesign, columns: 3, title: 'Nit especial' } },
+      { id: 'bad', name: '   ', design: defaultPosterDesign },
+      { id: 'missing', name: 'Sense disseny' },
+      null,
+    ])
+    expect(parsePosterTemplates(raw)).toEqual([{ id: 'one', name: 'Festa', design: { ...defaultPosterDesign, columns: 3, title: 'Nit especial' } }])
+  })
+
+  it('retorna una llista buida si l’emmagatzematge és buit o invàlid', () => {
+    expect(parsePosterTemplates(null)).toEqual([])
+    expect(parsePosterTemplates('això no és JSON')).toEqual([])
+    expect(parsePosterTemplates(JSON.stringify({ id: 'one' }))).toEqual([])
+  })
+
+  it('limita les dades recuperades a 30 plantilles i saneja el disseny', () => {
+    const many = Array.from({ length: 35 }, (_, index) => ({ id: String(index), name: `P${index}`, design: { columns: 20, background: 'invalid' } }))
+    const parsed = parsePosterTemplates(JSON.stringify(many))
+    expect(parsed).toHaveLength(30)
+    expect(parsed[0].design.columns).toBe(1)
+    expect(parsed[0].design.background).toBe(defaultPosterDesign.background)
+  })
+
+  it('normalitza un disseny antic sense perdre els camps amb valors vàlids', () => {
+    expect(normalizePosterDesign({ layout: 'quadrícula', title: 'Gira!', columns: 2 })).toMatchObject({ layout: 'quadrícula', divider: 'block', title: 'Gira!', columns: 2 })
+    expect(normalizePosterDesign(null)).toEqual(defaultPosterDesign)
   })
 })

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { Download, ImagePlus, RotateCcw, X } from 'lucide-react'
+import { Check, Download, ImagePlus, RotateCcw, Save, Trash2, X } from 'lucide-react'
 import { posterConcerts, type Concert } from './model'
-import { defaultPosterDesign, drawPoster, posterAlignList, posterColumns, posterDateFormatList, posterDividerList, posterFormatList, posterFormats, posterImagePositionList, posterLayoutList, posterOrderList, posterPageSize, posterTypefaceList, type PosterAlign, type PosterDateFormat, type PosterDesign, type PosterDivider, type PosterFormat, type PosterImagePosition, type PosterLayout, type PosterTypeface } from './poster'
+import { defaultPosterDesign, drawPoster, normalizePosterDesign, parsePosterTemplates, posterFormatList, posterFormats, posterPageSize, type PosterAlign, type PosterDateFormat, type PosterDesign, type PosterDivider, type PosterFormat, type PosterImagePosition, type PosterLayout, type PosterTemplate, type PosterTypeface } from './poster'
 
 const settingsKey = 'escena-tour-poster-v1'
+const templatesKey = 'escena-tour-poster-templates-v1'
 
 const layoutOptions: { value: PosterLayout; label: string; description: string }[] = [
   { value: 'cartell', label: 'Cartell', description: 'Dates en primer pla' },
@@ -21,69 +22,15 @@ const dateOptions: { value: PosterDateFormat; label: string }[] = [{ value: 'sho
 const imageOptions: { value: PosterImagePosition; label: string }[] = [{ value: 'center', label: 'Centrada' }, { value: 'top', label: 'Amunt' }, { value: 'bottom', label: 'Avall' }]
 const logoOptions: { value: PosterDesign['logoPosition']; label: string }[] = [{ value: 'right', label: 'A la dreta' }, { value: 'left', label: 'A l’esquerra' }]
 
-function oneOf<T extends string>(value: unknown, options: T[], fallback: T): T {
-  return typeof value === 'string' && options.includes(value as T) ? value as T : fallback
-}
-
-function amount(value: unknown, min: number, max: number, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fallback
-}
-
-function flag(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback
-}
-
-function line(value: unknown, max: number, fallback: string): string {
-  return typeof value === 'string' ? value.slice(0, max) : fallback
-}
-
-function color(value: unknown, fallback: string): string {
-  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
-}
-
 function storedDesign(): PosterDesign {
-  const base = defaultPosterDesign
   try {
-    const saved = JSON.parse(localStorage.getItem(settingsKey) || 'null') as Partial<PosterDesign> | null
-    if (!saved) return base
-    const layout = oneOf(saved.layout, posterLayoutList, base.layout)
-    return {
-      format: oneOf(saved.format, posterFormatList, base.format),
-      layout,
-      typeface: oneOf(saved.typeface, posterTypefaceList, base.typeface),
-      order: oneOf(saved.order, posterOrderList, base.order),
-      align: oneOf(saved.align, posterAlignList, base.align),
-      divider: oneOf(saved.divider, posterDividerList, layout === 'quadrícula' ? 'block' : 'line'),
-      dateFormat: oneOf(saved.dateFormat, posterDateFormatList, base.dateFormat),
-      imagePosition: oneOf(saved.imagePosition, posterImagePositionList, base.imagePosition),
-      logoPosition: oneOf(saved.logoPosition, ['left', 'right'], base.logoPosition),
-      title: line(saved.title, 65, base.title),
-      subtitle: line(saved.subtitle, 65, base.subtitle),
-      footer: line(saved.footer, 90, base.footer),
-      background: color(saved.background, base.background),
-      foreground: color(saved.foreground, base.foreground),
-      accent: color(saved.accent, base.accent),
-      fontSize: amount(saved.fontSize, 30, 64, base.fontSize),
-      spacing: amount(saved.spacing, 0, 35, base.spacing),
-      columns: posterColumns({ ...base, layout, columns: typeof saved.columns === 'number' ? saved.columns : Number.NaN }),
-      columnGap: amount(saved.columnGap, 8, 48, base.columnGap),
-      margin: amount(saved.margin, 40, 110, base.margin),
-      titleSize: amount(saved.titleSize, 40, 130, base.titleSize),
-      bandSize: amount(saved.bandSize, 18, 44, base.bandSize),
-      imageShade: amount(saved.imageShade, 20, 95, base.imageShade),
-      uppercase: flag(saved.uppercase, base.uppercase),
-      rules: flag(saved.rules, base.rules),
-      showLogo: flag(saved.showLogo, base.showLogo),
-      showTitle: flag(saved.showTitle, base.showTitle),
-      showSubtitle: flag(saved.showSubtitle, base.showSubtitle),
-      showBand: flag(saved.showBand, base.showBand),
-      showFooter: flag(saved.showFooter, base.showFooter),
-      showDate: flag(saved.showDate, base.showDate),
-      showName: flag(saved.showName, base.showName),
-      showCity: flag(saved.showCity, base.showCity),
-      showPast: flag(saved.showPast, base.showPast),
-    }
-  } catch { return base }
+    return normalizePosterDesign(JSON.parse(localStorage.getItem(settingsKey) || 'null'))
+  } catch { return defaultPosterDesign }
+}
+
+function storedTemplates(): PosterTemplate[] {
+  try { return parsePosterTemplates(localStorage.getItem(templatesKey)) }
+  catch { return [] }
 }
 
 function loadImage(url: string, onLoad: (image: HTMLImageElement) => void, onError: () => void) {
@@ -113,6 +60,10 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 
 export default function TourPoster({ concerts, bandName, logoUrl }: { concerts: Concert[]; bandName: string; logoUrl?: string }) {
   const [design, setDesign] = useState(storedDesign)
+  const [templates, setTemplates] = useState(storedTemplates)
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateName, setTemplateName] = useState('')
+  const [templateFeedback, setTemplateFeedback] = useState('')
   const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | undefined>()
   const [logo, setLogo] = useState<HTMLImageElement | undefined>()
   const [page, setPage] = useState(0)
@@ -146,7 +97,11 @@ export default function TourPoster({ concerts, bandName, logoUrl }: { concerts: 
     return () => { active = false }
   }, [design, concerts, bandName, currentPage, pages, backgroundImage, logo])
 
-  function update<K extends keyof PosterDesign>(key: K, value: PosterDesign[K]) { setDesign((previous) => ({ ...previous, [key]: value })); setError('') }
+  function update<K extends keyof PosterDesign>(key: K, value: PosterDesign[K]) {
+    setDesign((previous) => ({ ...previous, [key]: value }))
+    setTemplateFeedback(selectedTemplateId ? 'Hi ha canvis pendents per actualitzar aquesta plantilla.' : '')
+    setError('')
+  }
 
   function changeBackground(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -168,6 +123,63 @@ export default function TourPoster({ concerts, bandName, logoUrl }: { concerts: 
     backgroundUrl.current = null
   }
 
+  function saveTemplates(next: PosterTemplate[]): boolean {
+    try {
+      localStorage.setItem(templatesKey, JSON.stringify(next))
+      setTemplates(next)
+      setError('')
+      return true
+    } catch {
+      setError('No s’ha pogut desar la plantilla. Pot ser que l’emmagatzematge del navegador estigui ple.')
+      return false
+    }
+  }
+
+  function saveTemplate() {
+    const name = templateName.trim().slice(0, 40)
+    if (!name) { setError('Escriu un nom per a la plantilla.'); return }
+    if (templates.length >= 30) { setError('Ja tens 30 plantilles desades. Elimina’n alguna abans de desar-ne una altra.'); return }
+    if (templates.some((template) => template.name.toLocaleLowerCase('ca') === name.toLocaleLowerCase('ca'))) {
+      setError('Ja existeix una plantilla amb aquest nom. Selecciona-la per actualitzar-la.')
+      return
+    }
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const next = [...templates, { id, name, design: { ...design } }]
+    if (saveTemplates(next)) { setSelectedTemplateId(id); setTemplateFeedback('Plantilla desada.') }
+  }
+
+  function updateTemplate() {
+    const name = templateName.trim().slice(0, 40)
+    if (!selectedTemplateId) { setError('Selecciona primer una plantilla per actualitzar-la.'); return }
+    if (!name) { setError('Escriu un nom per a la plantilla.'); return }
+    if (templates.some((template) => template.id !== selectedTemplateId && template.name.toLocaleLowerCase('ca') === name.toLocaleLowerCase('ca'))) {
+      setError('Ja existeix una altra plantilla amb aquest nom.')
+      return
+    }
+    const next = templates.map((template) => template.id === selectedTemplateId ? { ...template, name, design: { ...design } } : template)
+    if (saveTemplates(next)) setTemplateFeedback('Plantilla actualitzada.')
+  }
+
+  function loadTemplate() {
+    const template = templates.find((item) => item.id === selectedTemplateId)
+    if (!template) return
+    setDesign(normalizePosterDesign(template.design))
+    setTemplateName(template.name)
+    setPage(0)
+    setTemplateFeedback('Plantilla carregada.')
+    setError('')
+  }
+
+  function deleteTemplate() {
+    const template = templates.find((item) => item.id === selectedTemplateId)
+    if (!template || !window.confirm(`Vols eliminar la plantilla «${template.name}»?`)) return
+    if (saveTemplates(templates.filter((item) => item.id !== selectedTemplateId))) {
+      setSelectedTemplateId('')
+      setTemplateName('')
+      setTemplateFeedback('Plantilla eliminada.')
+    }
+  }
+
   function download() {
     if (!dates.length) return
     try {
@@ -187,6 +199,13 @@ export default function TourPoster({ concerts, bandName, logoUrl }: { concerts: 
     <header className="page-heading poster-heading"><div><span className="eyebrow">LA GIRA, A PUNT PER COMPARTIR</span><h1>Cartell de gira<span className="heading-period">.</span></h1><p>El disseny és teu; les dates es mantenen al dia amb les fitxes.</p></div><button type="button" className="button button-primary" onClick={download} disabled={!dates.length}><Download size={17} /> Descarregar PNG</button></header>
     <div className="poster-workspace">
       <div className="poster-controls">
+        <section className="poster-control-card"><h2>Plantilles</h2>
+          <label className="field">Nom de la plantilla <input maxLength={40} value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Per exemple, Gira d’estiu" /></label>
+          <button type="button" className="button button-secondary" onClick={saveTemplate} disabled={!templateName.trim() || templates.length >= 30}><Save size={15} /> Desar plantilla actual</button>
+          <Select label="Plantilles desades" value={selectedTemplateId} options={[{ value: '', label: templates.length ? 'Tria una plantilla' : 'Encara no n’hi ha cap' }, ...templates.map((item) => ({ value: item.id, label: item.name }))]} onChange={(id) => { setSelectedTemplateId(id); setTemplateName(templates.find((item) => item.id === id)?.name || ''); setTemplateFeedback('') }} />
+          <div className="poster-template-actions"><button type="button" className="button button-primary" onClick={loadTemplate} disabled={!selectedTemplateId}><Check size={15} /> Carregar</button><button type="button" className="button button-secondary" onClick={updateTemplate} disabled={!selectedTemplateId}><Save size={15} /> Actualitzar</button><button type="button" className="button button-secondary" onClick={deleteTemplate} disabled={!selectedTemplateId} aria-label="Eliminar plantilla"><Trash2 size={15} /></button></div>
+          {templateFeedback ? <small className="poster-template-feedback" role="status">{templateFeedback}</small> : null}<small className="poster-help">Les plantilles es guarden només en aquest navegador. Inclouen tots els ajustos; la imatge de fons s’ha de tornar a seleccionar.</small>
+        </section>
         <section className="poster-control-card"><h2>Composició</h2>
           <Group title="Estil de les dates"><div className="poster-layout-options">{layoutOptions.map((option) => <button type="button" key={option.value} className={design.layout === option.value ? 'selected' : ''} aria-pressed={design.layout === option.value} onClick={() => { update('layout', option.value); if (option.value === 'quadrícula' && design.columns < 2) update('columns', 2) }}><strong>{option.label}</strong><small>{option.description}</small></button>)}</div></Group>
           <Group title="Columnes"><Slider label="Nombre de columnes" value={design.columns} min={1} max={4} onChange={(value) => update('columns', value)} /><Slider label="Separació" value={design.columnGap} min={8} max={48} onChange={(value) => update('columnGap', value)} /><Slider label="Marges" value={design.margin} min={40} max={110} onChange={(value) => update('margin', value)} /></Group>
