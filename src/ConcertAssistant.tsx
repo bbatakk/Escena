@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowRight, Bot, Check, MessageCircleQuestion, Sparkles } from 'lucide-react'
 import { cloudConfigured, deleteBandDocument, deleteMerchSale, deleteMoneyMovement, getBandName, listAllResources, listBandDocuments, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, saveBandDocument, saveBandName, saveMerchProduct, saveMerchSale, saveMoneyMovement, saveResource, supabase } from './data'
-import { concertSettlement, createId, getPending, newConcert, statusLabels, totalMerchRevenue, totalNetConcertFees, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type ConcertStatus, type LabelAgreement, type MerchProduct, type MoneyMovement, type PersonKind, type SetlistTemplate } from './model'
+import { concertSettlement, createId, generatedTreasuryMovements, getPending, moneyMovementBalance, newConcert, statusLabels, totalMerchRevenue, totalNetConcertFees, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type ConcertStatus, type LabelAgreement, type MerchProduct, type MoneyMovement, type PersonKind, type SetlistTemplate } from './model'
 import { actionFieldLabels, modeLabels, parseAppActions, sectionFields, sectionLabels, type ActionContext, type AppAction } from './assistantActions'
 import type { ThemeId } from './Settings'
+import { posterAssistantContext, posterSettingsStorageKey, posterTemplatesStorageKey } from './poster'
 
 type DraftResponse = { title?: unknown; date?: unknown; status?: unknown; venue?: unknown; city?: unknown; country?: unknown; address?: unknown; feeAmount?: unknown; details?: Record<string, unknown> }
 type ConcertChanges = Partial<Pick<Concert, 'title' | 'date' | 'status' | 'venue' | 'city' | 'country' | 'address' | 'feeAmount' | 'feePaid'>> & { details?: Partial<ConcertDetails> }
@@ -21,8 +22,8 @@ type AssistantPlan =
   | { type: 'manage'; actions: AppAction[] }
 
 const editableFields = ['title', 'date', 'status', 'venue', 'city', 'country', 'address', 'feeAmount', 'feePaid'] as const
-const editableDetails = ['management', 'conditions', 'cancellation', 'team', 'travel', 'loadIn', 'parking', 'dinner', 'dinnerDetails', 'lodging', 'lodgingDetails', 'lodgingAddress', 'setlist', 'passes', 'expenses', 'feePaymentMethod', 'expensePaymentMethod', 'notes', 'personIds'] as const
-const detailLabels: Record<(typeof editableDetails)[number], string> = { management: 'Gestionat per', conditions: 'Condicions', cancellation: 'Cancel·lació', team: 'Equip', travel: 'Desplaçament', loadIn: 'Accés de càrrega', parking: 'Aparcament', dinner: 'Sopar', dinnerDetails: 'Detalls del sopar', lodging: 'Allotjament', lodgingDetails: 'Detalls de l’allotjament', lodgingAddress: 'Adreça de l’allotjament', setlist: 'Repertori', passes: 'Passis', expenses: 'Despeses', feePaymentMethod: 'Compte del catxet', expensePaymentMethod: 'Compte de les despeses', notes: 'Notes', personIds: 'Persones que hi van' }
+const editableDetails = ['announceable', 'management', 'conditions', 'cancellation', 'team', 'travel', 'loadIn', 'parking', 'dinner', 'dinnerDetails', 'lodging', 'lodgingDetails', 'lodgingAddress', 'setlist', 'passes', 'expenses', 'feePaymentMethod', 'expensePaymentMethod', 'notes', 'personIds'] as const
+const detailLabels: Record<(typeof editableDetails)[number], string> = { announceable: 'Es pot anunciar', management: 'Gestionat per', conditions: 'Condicions', cancellation: 'Cancel·lació', team: 'Equip', travel: 'Desplaçament', loadIn: 'Accés de càrrega', parking: 'Aparcament', dinner: 'Sopar', dinnerDetails: 'Detalls del sopar', lodging: 'Allotjament', lodgingDetails: 'Detalls de l’allotjament', lodgingAddress: 'Adreça de l’allotjament', setlist: 'Repertori', passes: 'Passis', expenses: 'Despeses', feePaymentMethod: 'Compte del catxet', expensePaymentMethod: 'Compte de les despeses', notes: 'Notes', personIds: 'Persones que hi van' }
 const fieldLabels: Record<(typeof editableFields)[number], string> = { title: 'Nom', date: 'Data', status: 'Estat', venue: 'Sala o espai', city: 'Població', country: 'País', address: 'Adreça', feeAmount: 'Catxet acordat', feePaid: 'Catxet cobrat' }
 const personKindLabels: Record<PersonKind, string> = { musica: 'Música', tecnic: 'Tècnic', manager: 'Mànager', contacte: 'Contacte' }
 const personNameKey = (name: string) => name.trim().normalize('NFKC').toLocaleLowerCase('ca')
@@ -30,6 +31,23 @@ const personNameKey = (name: string) => name.trim().normalize('NFKC').toLocaleLo
 function text(value: unknown): string { return typeof value === 'string' ? value.trim() : '' }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
 function validAnswer(value: unknown): 'pendent' | 'si' | 'no' { return value === 'si' || value === 'no' ? value : 'pendent' }
+
+function assistantPosterContext(concerts: Concert[], logoAvailable: boolean) {
+  try {
+    return posterAssistantContext(concerts, referenceDate(), localStorage.getItem(posterSettingsStorageKey), localStorage.getItem(posterTemplatesStorageKey), logoAvailable)
+  } catch {
+    return posterAssistantContext(concerts, referenceDate(), null, null, logoAvailable)
+  }
+}
+
+function detailValueLabel(field: (typeof editableDetails)[number], value: unknown): string {
+  if (field === 'announceable') return value === true ? 'Sí' : 'No'
+  if (field === 'feePaymentMethod' || field === 'expensePaymentMethod') return value === 'cash' ? 'Efectiu' : 'Compte bancari'
+  if (field === 'management') return value === 'discografica' ? 'Discogràfica' : value === 'banda' ? 'La banda' : 'Pendent de classificar'
+  if (field === 'dinner' || field === 'lodging') return value === 'si' ? 'Sí' : value === 'no' ? 'No' : 'Pendent'
+  if (field === 'expenses' && typeof value === 'number') return new Intl.NumberFormat('ca-ES', { style: 'currency', currency: 'EUR' }).format(value)
+  return typeof value === 'string' ? value : String(value ?? '')
+}
 
 async function invokeAssistant(body: Record<string, unknown>): Promise<Record<string, unknown>> {
   if (!supabase) throw new Error('Connecta Supabase per utilitzar l’assistent.')
@@ -60,6 +78,7 @@ function makeConcertDraft(value: DraftResponse, labelAgreement?: LabelAgreement 
   const details = value.details || {}
   concert.details = {
     ...concert.details,
+    announceable: details.announceable === true,
     management: details.management === 'banda' ? 'banda' : details.management === 'discografica' && labelAgreement ? 'discografica' : 'pendent',
     labelAgreement: details.management === 'discografica' && labelAgreement ? { name: labelAgreement.name, tiers: labelAgreement.tiers.map((tier) => ({ ...tier })) } : undefined,
     conditions: text(details.conditions), cancellation: text(details.cancellation), contactName: text(details.contactName),
@@ -143,7 +162,8 @@ export function parsePlan(value: unknown, concerts: Concert[], setlists: Setlist
         for (const key of editableDetails) {
           if (!(key in raw.changes.details)) continue
           const next = raw.changes.details[key]
-          if (key === 'management') { if (['pendent', 'banda', 'discografica'].includes(String(next))) details[key] = next }
+          if (key === 'announceable') { if (typeof next === 'boolean') details[key] = next }
+          else if (key === 'management') { if (['pendent', 'banda', 'discografica'].includes(String(next))) details[key] = next }
           else if (key === 'dinner' || key === 'lodging') { if (['pendent', 'si', 'no'].includes(String(next))) details[key] = next }
           else if (key === 'expenses') { if (typeof next === 'number' && Number.isFinite(next) && next >= 0) details[key] = next }
           else if (key === 'feePaymentMethod' || key === 'expensePaymentMethod') { if (next === 'bank' || next === 'cash') details[key] = next }
@@ -181,12 +201,67 @@ function referenceDate(): string {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 }
 
-async function loadActionContext(concerts: Concert[], workspaceName: string): Promise<ActionContext> {
+type LoadedActionContext = ActionContext & { displayedMoney: MoneyMovement[] }
+
+async function loadActionContext(concerts: Concert[], workspaceName: string, labelAgreement: LabelAgreement | null): Promise<LoadedActionContext> {
   const [people, materials, setlists, documents, money, products, sales] = await Promise.all([
     listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), listBandDocuments(),
     listMoneyMovements(), listMerchProducts(), listMerchSales(),
   ])
-  return { concerts, workspaceName, theme: localStorage.getItem('escena-theme') || 'live-stage', people, materials, setlists, documents, money: money.filter((item) => !item.sourceType), products, sales }
+  const recordedSources = new Set(money.filter((item) => item.sourceType && item.sourceId).map((item) => `${item.sourceType}:${item.sourceId}`))
+  const manualExpenseConcerts = new Set(money.filter((item) => item.kind === 'despesa' && !item.sourceType && item.concertId).map((item) => item.concertId))
+  const generated = generatedTreasuryMovements(concerts, labelAgreement, sales, referenceDate()).filter((item) => !(item.sourceType === 'concert_expense' && item.sourceId && manualExpenseConcerts.has(item.sourceId)) && (!item.sourceType || !item.sourceId || !recordedSources.has(`${item.sourceType}:${item.sourceId}`)))
+  return { concerts, workspaceName, theme: localStorage.getItem('escena-theme') || 'live-stage', people, materials, setlists, documents, money: money.filter((item) => !item.sourceType), displayedMoney: [...generated, ...money], products, sales }
+}
+
+function assistantConcertContext(concerts: Concert[], people: BandPerson[], labelAgreement: LabelAgreement | null) {
+  return concerts.slice(0, 300).map((concert) => {
+    const settlement = concertSettlement(concert, labelAgreement)
+    const selectedPeople = concert.details.personIds.map((id) => people.find((person) => person.id === id && person.active)?.name).filter((name): name is string => Boolean(name))
+    return {
+      id: concert.id, title: concert.title, date: concert.date, status: concert.status, statusLabel: statusLabels[concert.status],
+      venue: concert.venue, city: concert.city, country: concert.country, address: concert.address,
+      feeAmount: concert.feeAmount, feePaid: concert.feePaid, netPaid: settlement.unresolved ? null : settlement.netPaid,
+      pending: getPending(concert), schedule: concert.details.schedule.slice(0, 12).map(({ time, label, place }) => ({ time, label, place })),
+      setlist: concert.details.setlist.slice(0, 1500),
+      details: {
+        announceable: concert.details.announceable === true, management: concert.details.management || 'pendent',
+        labelName: concert.details.labelAgreement?.name || '', conditions: concert.details.conditions.slice(0, 500),
+        cancellation: concert.details.cancellation.slice(0, 500), team: concert.details.team.slice(0, 500),
+        travel: concert.details.travel.slice(0, 500), loadIn: concert.details.loadIn.slice(0, 300), parking: concert.details.parking.slice(0, 300),
+        dinner: concert.details.dinner, dinnerDetails: concert.details.dinnerDetails.slice(0, 300),
+        lodging: concert.details.lodging, lodgingDetails: concert.details.lodgingDetails.slice(0, 300), lodgingAddress: concert.details.lodgingAddress.slice(0, 300),
+        passes: concert.details.passes.slice(0, 300), expenses: concert.details.expenses,
+        feePaymentMethod: concert.details.feePaymentMethod || 'bank', expensePaymentMethod: concert.details.expensePaymentMethod || 'bank',
+        merchSales: concert.details.merchSales, personIds: concert.details.personIds, people: selectedPeople,
+      },
+    }
+  })
+}
+
+export function assistantAnalytics(concerts: Concert[], labelAgreement: LabelAgreement | null, sales: Awaited<ReturnType<typeof listMerchSales>>, movements: MoneyMovement[]) {
+  const total = (items: MoneyMovement[], kind: MoneyMovement['kind']) => items.filter((item) => item.kind === kind).reduce((sum, item) => sum + item.amount, 0)
+  const bank = movements.filter((item) => (item.paymentMethod || 'bank') === 'bank')
+  const cash = movements.filter((item) => item.paymentMethod === 'cash')
+  return {
+    concertCount: concerts.length,
+    concertsTruncated: concerts.length > 300,
+    agreedFees: concerts.reduce((sum, concert) => sum + concert.feeAmount, 0),
+    collectedFees: concerts.reduce((sum, concert) => sum + concert.feePaid, 0),
+    netCollectedFees: totalNetConcertFees(concerts, labelAgreement),
+    unclassifiedFees: concerts.filter((concert) => concertSettlement(concert, labelAgreement).unresolved && concert.feePaid > 0).length,
+    merchRevenue: totalMerchRevenue(concerts, sales),
+    movementsTruncated: movements.length > 500,
+    movementIncome: total(movements, 'ingres'),
+    movementExpenses: total(movements, 'despesa'),
+    bankBalance: moneyMovementBalance(movements, 'bank'),
+    cashBalance: moneyMovementBalance(movements, 'cash'),
+    bankIncome: total(bank, 'ingres'),
+    bankExpenses: total(bank, 'despesa'),
+    cashIncome: total(cash, 'ingres'),
+    cashExpenses: total(cash, 'despesa'),
+    movements: movements.slice(0, 500).map(({ id, kind, amount, date, category, note, concertId, paymentMethod, sourceType }) => ({ id, kind, amount, date, category, note, concertId, paymentMethod: paymentMethod || 'bank', sourceType: sourceType || 'manual' })),
+  }
 }
 
 async function applyAppAction(action: AppAction, context: ActionContext, onWorkspaceNameChange: (name: string) => void, onThemeChange: (theme: ThemeId) => void): Promise<void> {
@@ -226,7 +301,7 @@ async function applyAppAction(action: AppAction, context: ActionContext, onWorks
   }
 }
 
-export default function ConcertAssistant({ concerts, workspaceName, labelAgreement, onWorkspaceNameChange, onThemeChange, onCreateDraft, onUpdateConcert, onSaveSetlist, onDeleteConcert, onSavePerson }: { concerts: Concert[]; workspaceName: string; labelAgreement: LabelAgreement | null; onWorkspaceNameChange: (name: string) => void; onThemeChange: (theme: ThemeId) => void; onCreateDraft: (draft: Concert) => void; onUpdateConcert: (concert: Concert) => Promise<void>; onSaveSetlist: (template: SetlistTemplate) => Promise<void>; onDeleteConcert: (concert: Concert) => Promise<void>; onSavePerson: (person: BandPerson) => Promise<void> }) {
+export default function ConcertAssistant({ concerts, workspaceName, workspaceLogo, labelAgreement, onWorkspaceNameChange, onThemeChange, onCreateDraft, onUpdateConcert, onSaveSetlist, onDeleteConcert, onSavePerson }: { concerts: Concert[]; workspaceName: string; workspaceLogo?: string; labelAgreement: LabelAgreement | null; onWorkspaceNameChange: (name: string) => void; onThemeChange: (theme: ThemeId) => void; onCreateDraft: (draft: Concert) => void; onUpdateConcert: (concert: Concert) => Promise<void>; onSaveSetlist: (template: SetlistTemplate) => Promise<void>; onDeleteConcert: (concert: Concert) => Promise<void>; onSavePerson: (person: BandPerson) => Promise<void> }) {
   const [request, setRequest] = useState('')
   const [plan, setPlan] = useState<AssistantPlan | null>(null)
   const [busy, setBusy] = useState(false)
@@ -242,11 +317,21 @@ export default function ConcertAssistant({ concerts, workspaceName, labelAgreeme
     if (!supabase || !cloudConfigured) { setError('Connecta Supabase i configura la funció d’IA per utilitzar l’assistent.'); return }
     setBusy(true); setError(''); setNotice(''); setPlan(null)
     try {
-      const context = concerts.slice(0, 300).map((concert) => ({ id: concert.id, title: concert.title, date: concert.date, status: concert.status, statusLabel: statusLabels[concert.status], venue: concert.venue, city: concert.city, country: concert.country, address: concert.address, feeAmount: concert.feeAmount, feePaid: concert.feePaid, netPaid: concertSettlement(concert, labelAgreement).unresolved ? null : concertSettlement(concert, labelAgreement).netPaid, pending: getPending(concert), schedule: concert.details.schedule.slice(0, 12), setlist: concert.details.setlist.slice(0, 1500), details: { management: concert.details.management || 'pendent', labelName: concert.details.labelAgreement?.name || '', dinner: concert.details.dinner, lodging: concert.details.lodging, lodgingAddress: concert.details.lodgingAddress, personIds: concert.details.personIds } }))
-      const catalog = await loadActionContext(concerts, workspaceName)
-      const { people, materials, setlists: templates, documents, money: movements, products, sales } = catalog
+       const catalog = await loadActionContext(concerts, workspaceName, labelAgreement)
+       const { people, materials, setlists: templates, documents, money: movements, displayedMoney, products, sales } = catalog
+       const context = assistantConcertContext(concerts, people, labelAgreement)
       setPeopleNames(new Map(people.map((person) => [person.id, person.name])))
-      const data = await invokeAssistant({ action: 'copilot', request, referenceDate: referenceDate(), concerts: context, labelAgreement, setlists: templates.map(({ id, name, songs, active }) => ({ id, name, songs, active })), people: people.map(({ id, name, kind, active }) => ({ id, name, kind, active })), materials: materials.map(({ id, name, category, active }) => ({ id, name, category, active })), documents: documents.map(({ id, name, url, archived, fileName }) => ({ id, name, url, archived, fileName })), products: products.map(({ id, name, price, stock, sizes, active }) => ({ id, name, price, stock, sizes, active })), sales: sales.slice(0, 300).map(({ id, concertId, productId, quantity, unitPrice, size }) => ({ id, concertId, productId, quantity, unitPrice, size })), workspaceName, theme: catalog.theme, analytics: { concertCount: concerts.length, concertsTruncated: concerts.length > 300, agreedFees: concerts.reduce((sum, concert) => sum + concert.feeAmount, 0), collectedFees: concerts.reduce((sum, concert) => sum + concert.feePaid, 0), netCollectedFees: totalNetConcertFees(concerts, labelAgreement), unclassifiedFees: concerts.filter((concert) => concertSettlement(concert, labelAgreement).unresolved && concert.feePaid > 0).length, merchRevenue: totalMerchRevenue(concerts, sales), movementsTruncated: movements.length > 500, movementIncome: movements.filter((item) => item.kind === 'ingres').reduce((sum, item) => sum + item.amount, 0), movementExpenses: movements.filter((item) => item.kind === 'despesa').reduce((sum, item) => sum + item.amount, 0), movements: movements.slice(0, 500).map(({ id, kind, amount, date, category, note, concertId }) => ({ id, kind, amount, date, category, note, concertId })) } })
+       const data = await invokeAssistant({
+         action: 'copilot', request, referenceDate: referenceDate(), concerts: context, labelAgreement,
+         poster: assistantPosterContext(concerts, Boolean(workspaceLogo)),
+         setlists: templates.map(({ id, name, songs, active }) => ({ id, name, songs, active })),
+         people: people.map(({ id, name, kind, active }) => ({ id, name, kind, active })),
+         materials: materials.map(({ id, name, category, active }) => ({ id, name, category, active })),
+         documents: documents.map(({ id, name, url, archived, fileName }) => ({ id, name, url, archived, fileName })),
+         products: products.map(({ id, name, price, stock, sizes, active }) => ({ id, name, price, stock, sizes, active })),
+         sales: sales.slice(0, 300).map(({ id, concertId, productId, quantity, unitPrice, size }) => ({ id, concertId, productId, quantity, unitPrice, size })),
+         workspaceName, theme: catalog.theme, analytics: assistantAnalytics(concerts, labelAgreement, sales, displayedMoney),
+       })
       setLinkedCounts(new Map(concerts.map((concert) => [concert.id, sales.filter((sale) => sale.concertId === concert.id).length + movements.filter((movement) => movement.concertId === concert.id).length])))
       setPlan(parsePlan(data.plan, concerts, templates, people, catalog, labelAgreement))
       if (typeof data.remainingToday === 'number') setRemainingToday(data.remainingToday)
@@ -268,7 +353,7 @@ export default function ConcertAssistant({ concerts, workspaceName, labelAgreeme
         setNotice(`S’han afegit ${created} ${created === 1 ? 'persona' : 'persones'} a Persones.`)
       } else if (plan.type === 'manage') {
         const [latestConcerts, latestName] = await Promise.all([listConcerts(), getBandName()])
-        const fresh = await loadActionContext(latestConcerts, latestName)
+        const fresh = await loadActionContext(latestConcerts, latestName, labelAgreement)
         for (const action of plan.actions) {
           if (action.before) {
             const rows = action.section === 'workspace' ? [{ id: 'workspace', name: fresh.workspaceName }] : action.section === 'theme' ? [{ id: 'theme', theme: fresh.theme }] : (fresh as unknown as Record<string, unknown>)[action.section] as Array<{ id: string }>
@@ -319,6 +404,7 @@ export default function ConcertAssistant({ concerts, workspaceName, labelAgreeme
 
   function valueLabel(value: unknown): string {
     if (typeof value === 'number') return new Intl.NumberFormat('ca-ES', { style: 'currency', currency: 'EUR' }).format(value)
+    if (typeof value === 'boolean') return value ? 'Sí' : 'No'
     if (typeof value === 'string' && value in statusLabels) return statusLabels[value as ConcertStatus]
     return String(value)
   }
@@ -327,7 +413,7 @@ export default function ConcertAssistant({ concerts, workspaceName, labelAgreeme
     <div className="page-heading assistant-heading"><div><span className="eyebrow">AJUDA PER A LA BANDA</span><h1>Escena t’ajuda<span className="heading-period">.</span></h1><p>Consulta l’espai i proposa canvis en concerts, recursos, tresoreria i marxandatge.</p></div><span className="assistant-mark"><Sparkles size={19} /></span></div>
     {!cloudConfigured ? <div className="assistant-setup-note"><Bot size={17} /> L’assistent necessita Supabase i una funció d’IA configurada. Les dades continuen guardades només en aquest navegador.</div> : null}
     <section className="form-card assistant-card assistant-copilot"><div className="section-heading"><span className="section-index"><Sparkles size={16} /></span><div><h2>Què necessites?</h2><p>Demana una consulta, un resum o una acció sobre els apartats de l’app.</p></div></div>
-      <form className="fields" onSubmit={(event) => void submit(event)}><label className="field">Escriu-ho com ho diries a la banda<textarea required rows={6} maxLength={20000} value={request} onChange={(event) => { setRequest(event.target.value); setPlan(null) }} placeholder={'Ex. Afegeix un micròfon a Material, a la categoria So.\nApunta una despesa de 40 € de gasolina per avui.\nQuants concerts hem fet aquest any?'} /></label><div className="assistant-form-footer"><small>{request.length.toLocaleString('ca')} / 20.000 · S’envia a Gemini el text i un resum de concerts, recursos, documents, imports i catàleg. No es comparteixen telèfons ni correus guardats.</small><button className="button button-primary" type="submit" disabled={busy || applying || !request.trim() || !cloudConfigured}><Sparkles size={15} /> {busy ? 'Pensant…' : 'Enviar a Escena'}</button></div></form>
+      <form className="fields" onSubmit={(event) => void submit(event)}><label className="field">Escriu-ho com ho diries a la banda<textarea required rows={6} maxLength={20000} value={request} onChange={(event) => { setRequest(event.target.value); setPlan(null) }} placeholder={'Ex. Quins concerts surten al cartell de gira?\nQuin saldo tenim al banc i en efectiu?\nMarca el concert de Reus com a anunciable.'} /></label><div className="assistant-form-footer"><small>{request.length.toLocaleString('ca')} / 20.000 · S’envia a Gemini el text, un resum de concerts, recursos, tresoreria i el disseny i les plantilles locals del cartell. No s’envien telèfons, correus ni la imatge de fons.</small><button className="button button-primary" type="submit" disabled={busy || applying || !request.trim() || !cloudConfigured}><Sparkles size={15} /> {busy ? 'Pensant…' : 'Enviar a Escena'}</button></div></form>
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       {notice ? <p className="assistant-action-notice" role="status"><Check size={15} /> {notice}</p> : null}
       {plan?.type === 'answer' || plan?.type === 'analysis' ? <div className="assistant-answer"><span className="eyebrow"><MessageCircleQuestion size={13} /> {plan.type === 'analysis' ? 'ANÀLISI' : 'RESPOSTA'}</span><p>{plan.answer}</p></div> : null}
@@ -335,7 +421,7 @@ export default function ConcertAssistant({ concerts, workspaceName, labelAgreeme
       {plan?.type === 'create_people' ? <div className="assistant-action-preview"><span className="eyebrow">PERSONES PROPOSADES · CONFIRMA PER DESAR</span>{plan.people.map((person) => <div className="assistant-change" key={personNameKey(person.name)}><strong>{person.name}</strong><p>{personKindLabels[person.kind]}</p></div>)}<p>Nom i rol a Persones. El telèfon i el correu quedaran buits.</p><div className="assistant-action-buttons"><button type="button" className="button button-secondary" disabled={applying} onClick={() => setPlan(null)}>Descartar</button><button type="button" className="button button-primary" disabled={applying} onClick={() => void confirmPlan()}>{applying ? 'Desant…' : `Afegir ${plan.people.length} ${plan.people.length === 1 ? 'persona' : 'persones'}`}</button></div></div> : null}
       {plan?.type === 'manage' ? <div className="assistant-action-preview"><span className="eyebrow">{plan.actions.length} {plan.actions.length === 1 ? 'ACCIÓ PROPOSADA' : 'ACCIONS PROPOSADES'} · CONFIRMA PER DESAR</span>{plan.actions.map((action, index) => <div className="assistant-change" key={`${action.section}-${action.id || index}`}><strong>{modeLabels[action.mode]} · {sectionLabels[action.section]}{action.before?.name ? ` · ${action.before.name}` : ''}</strong>{action.after ? sectionFields[action.section].filter((key) => !action.before || JSON.stringify(action.before[key]) !== JSON.stringify(action.after?.[key])).map((key) => <p key={key}>{actionFieldLabels[key] || key}: {action.before ? `${String(action.before[key] ?? '—')} → ` : ''}<strong>{Array.isArray(action.after?.[key]) ? JSON.stringify(action.after[key]) : String(action.after?.[key] || (action.after?.[key] === 0 ? 0 : '—'))}</strong></p>) : <p>{action.mode === 'delete' ? 'S’eliminarà definitivament.' : 'Desapareixerà del catàleg actiu.'}</p>}{action.section === 'sales' && action.mode === 'create' ? <p>Preu unitari: {valueLabel(action.productPrice)}</p> : null}</div>)}<div className="assistant-action-buttons"><button type="button" className="button button-secondary" disabled={applying} onClick={() => setPlan(null)}>Descartar</button><button type="button" className="button button-primary" disabled={applying} onClick={() => void confirmPlan()}>{applying ? 'Desant…' : 'Confirmar canvis'}</button></div></div> : null}
       {plan?.type === 'create_concert' ? <div className="assistant-action-preview"><span className="eyebrow">ESBORRANY · ENCARA NO DESAT</span><strong>{plan.draft.title || 'Concert sense títol'}</strong><p>{[plan.draft.date, plan.draft.venue, plan.draft.city, plan.draft.country].filter(Boolean).join(' · ') || 'Falten data i ubicació'}</p><button type="button" className="button button-secondary" onClick={() => onCreateDraft(plan.draft)}>Revisar i completar fitxa <ArrowRight size={15} /></button></div> : null}
-      {plan?.type === 'update_concerts' ? <div className="assistant-action-preview"><span className="eyebrow">CANVIS PROPOSATS · CONFIRMA PER DESAR</span>{plan.updates.map((update) => { const concert = concerts.find((item) => item.id === update.concertId); if (!concert) return <p key={update.concertId}>Aquest concert ja no és disponible. Torna a preparar la petició.</p>; return <div className="assistant-change" key={update.concertId}><strong>{concert.title} · {concert.date}</strong>{editableFields.filter((field) => field in update.changes).map((field) => <p key={field}>{fieldLabels[field]}: <span>{valueLabel(concert[field]) || '—'}</span> → <strong>{valueLabel(update.changes[field]) || '—'}</strong></p>)}{editableDetails.filter((field) => field in (update.changes.details || {})).map((field) => <p key={field}>{detailLabels[field]}: <span>{field === 'personIds' ? concert.details.personIds.map((id) => peopleNames.get(id) || id).join(', ') || '—' : String(concert.details[field] || '—')}</span> → <strong>{field === 'personIds' ? (update.changes.details?.personIds || []).map((id) => peopleNames.get(id) || id).join(', ') || '—' : String(update.changes.details?.[field] || '—')}</strong></p>)}</div> })}<div className="assistant-action-buttons"><button type="button" className="button button-secondary" disabled={applying} onClick={() => setPlan(null)}>Descartar</button><button type="button" className="button button-primary" disabled={applying || plan.updates.some((update) => !concerts.some((concert) => concert.id === update.concertId && concert.updatedAt === update.updatedAt))} onClick={() => void confirmPlan()}>{applying ? 'Desant…' : 'Confirmar canvis'}</button></div></div> : null}
+      {plan?.type === 'update_concerts' ? <div className="assistant-action-preview"><span className="eyebrow">CANVIS PROPOSATS · CONFIRMA PER DESAR</span>{plan.updates.map((update) => { const concert = concerts.find((item) => item.id === update.concertId); if (!concert) return <p key={update.concertId}>Aquest concert ja no és disponible. Torna a preparar la petició.</p>; return <div className="assistant-change" key={update.concertId}><strong>{concert.title} · {concert.date}</strong>{editableFields.filter((field) => field in update.changes).map((field) => <p key={field}>{fieldLabels[field]}: <span>{valueLabel(concert[field]) || '—'}</span> → <strong>{valueLabel(update.changes[field]) || '—'}</strong></p>)}{editableDetails.filter((field) => field in (update.changes.details || {})).map((field) => <p key={field}>{detailLabels[field]}: <span>{field === 'personIds' ? concert.details.personIds.map((id) => peopleNames.get(id) || id).join(', ') || '—' : detailValueLabel(field, concert.details[field]) || '—'}</span> → <strong>{field === 'personIds' ? (update.changes.details?.personIds || []).map((id) => peopleNames.get(id) || id).join(', ') || '—' : detailValueLabel(field, update.changes.details?.[field]) || '—'}</strong></p>)}</div> })}<div className="assistant-action-buttons"><button type="button" className="button button-secondary" disabled={applying} onClick={() => setPlan(null)}>Descartar</button><button type="button" className="button button-primary" disabled={applying || plan.updates.some((update) => !concerts.some((concert) => concert.id === update.concertId && concert.updatedAt === update.updatedAt))} onClick={() => void confirmPlan()}>{applying ? 'Desant…' : 'Confirmar canvis'}</button></div></div> : null}
       {plan?.type === 'delete_concerts' ? <div className="assistant-action-preview"><span className="eyebrow">ELIMINACIÓ PERMANENT · CONFIRMA PER CONTINUAR</span>{plan.concerts.map((concert) => <div className="assistant-change" key={concert.id}><strong>{concert.title} · {concert.date}</strong><p>{concert.details.documents.length ? `${concert.details.documents.length} documents del concert` : 'Sense documents'} · {linkedCounts.get(concert.id) || 0} vendes o moviments vinculats</p></div>)}<p>Els documents propis del concert també es retiraran. Els concerts amb vendes o moviments vinculats no es poden eliminar des d’aquí.</p><div className="assistant-action-buttons"><button type="button" className="button button-secondary" disabled={applying} onClick={() => setPlan(null)}>Descartar</button><button type="button" className="button button-primary" disabled={applying || plan.concerts.some((concert) => (linkedCounts.get(concert.id) || 0) > 0)} onClick={() => void confirmPlan()}>{applying ? 'Eliminant…' : 'Confirmar eliminació'}</button></div></div> : null}
       {plan?.type === 'create_setlist' ? <div className="assistant-action-preview"><span className="eyebrow">PLANTILLA PROPOSADA · ENCARA NO DESADA</span><strong>{plan.template.name}</strong><ol>{plan.template.songs.map((song, index) => <li key={`${song}-${index}`}>{song}</li>)}</ol><div className="assistant-action-buttons"><button type="button" className="button button-secondary" disabled={applying} onClick={() => setPlan(null)}>Descartar</button><button type="button" className="button button-primary" disabled={applying} onClick={() => void confirmPlan()}>{applying ? 'Desant…' : 'Crear plantilla'}</button></div></div> : null}
       {plan?.type === 'update_setlist' || plan?.type === 'archive_setlist' ? <div className="assistant-action-preview"><span className="eyebrow">{plan.type === 'archive_setlist' ? 'ARXIVAR PLANTILLA' : 'EDITAR PLANTILLA'} · CONFIRMA PER DESAR</span><strong>{plan.original.name}</strong>{plan.type === 'update_setlist' ? <><p>Nom nou: {plan.template.name}</p><p>Cançons proposades:</p><ol>{plan.template.songs.map((song, index) => <li key={`${song}-${index}`}>{song}</li>)}</ol></> : <p>La plantilla desapareixerà del catàleg actiu. Els concerts que ja n’han copiat el repertori el conservaran.</p>}<div className="assistant-action-buttons"><button type="button" className="button button-secondary" disabled={applying} onClick={() => setPlan(null)}>Descartar</button><button type="button" className="button button-primary" disabled={applying} onClick={() => void confirmPlan()}>{applying ? 'Desant…' : 'Confirmar'}</button></div></div> : null}

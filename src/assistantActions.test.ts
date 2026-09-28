@@ -30,6 +30,7 @@ describe('accions dels apartats', () => {
 
   it('manté els valors visibles coherents amb els que es desaran', () => {
     expect(parseAppActions([{ section: 'money', mode: 'create', fields: { kind: 'ingres', amount: 50, date: '2026-09-25' } }], context)[0].after).toMatchObject({ category: 'Altres ingressos' })
+    expect(parseAppActions([{ section: 'money', mode: 'create', fields: { kind: 'despesa', amount: 17, date: '2026-09-25', paymentMethod: 'cash' } }], context)[0].after).toMatchObject({ paymentMethod: 'cash' })
     expect(() => parseAppActions([{ section: 'people', mode: 'create', fields: { name: 'Maria' } }], context)).toThrow()
   })
 

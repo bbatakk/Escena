@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parsePlan } from './ConcertAssistant'
+import { assistantAnalytics, parsePlan } from './ConcertAssistant'
 import { newConcert, type BandPerson, type SetlistTemplate } from './model'
 
 describe('plans de l’assistent', () => {
@@ -27,6 +27,25 @@ describe('plans de l’assistent', () => {
     expect(parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { dinner: 'si', personIds: ['person-1'] } } }] }, [concert], [], [person])).toMatchObject({ type: 'update_concerts', updates: [{ changes: { details: { dinner: 'si', personIds: ['person-1'] } } }] })
     expect(() => parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { personIds: ['desconegut'] } } }] }, [concert], [], [person])).toThrow()
     expect(() => parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { materials: [] } } }] }, [concert])).toThrow()
+  })
+
+  it('inclou anunciabilitat i comptes bancari/efectiu als canvis confirmables', () => {
+    const proposal = parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { announceable: true, feePaymentMethod: 'cash', expensePaymentMethod: 'bank' } } }] }, [concert])
+    expect(proposal).toMatchObject({ type: 'update_concerts', updates: [{ changes: { details: { announceable: true, feePaymentMethod: 'cash', expensePaymentMethod: 'bank' } } }] })
+    expect(parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { announceable: false } } }] }, [concert])).toMatchObject({ updates: [{ changes: { details: { announceable: false } } }] })
+    expect(() => parsePlan({ type: 'update_concerts', updates: [{ concertId: concert.id, changes: { details: { announceable: 'sí' } } }] }, [concert])).toThrow()
+    expect(parsePlan({ type: 'create_concert', draft: { title: 'Concert públic', details: { announceable: true } } }, [])).toMatchObject({ type: 'create_concert', draft: { details: { announceable: true } } })
+  })
+
+  it('resume els saldos exactes per compte incloent-hi els moviments generats', () => {
+    const analytics = assistantAnalytics([concert], null, [], [
+      { id: 'bank-income', kind: 'ingres', amount: 100, date: '2026-10-01', category: 'Catxet', note: '', paymentMethod: 'bank', sourceType: 'concert_fee' },
+      { id: 'cash-income', kind: 'ingres', amount: 25, date: '2026-10-01', category: 'Marxandatge', note: '', paymentMethod: 'cash', sourceType: 'merch_sale' },
+      { id: 'bank-expense', kind: 'despesa', amount: 30, date: '2026-10-01', category: 'Transport', note: '', paymentMethod: 'bank' },
+      { id: 'cash-expense', kind: 'despesa', amount: 5, date: '2026-10-01', category: 'Menjar', note: '', paymentMethod: 'cash' },
+    ])
+    expect(analytics).toMatchObject({ movementIncome: 125, movementExpenses: 35, bankIncome: 100, bankExpenses: 30, bankBalance: 70, cashIncome: 25, cashExpenses: 5, cashBalance: 20 })
+    expect(analytics.movements[0]).toMatchObject({ paymentMethod: 'bank', sourceType: 'concert_fee' })
   })
 
   it('copia les condicions quan l’IA assigna el concert al segell i no deixa inventar trams', () => {

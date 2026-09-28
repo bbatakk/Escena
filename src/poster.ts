@@ -1,4 +1,7 @@
-import type { PosterConcert } from './model'
+import { posterConcerts, type Concert, type PosterConcert } from './model'
+
+export const posterSettingsStorageKey = 'escena-tour-poster-v1'
+export const posterTemplatesStorageKey = 'escena-tour-poster-templates-v1'
 
 export type PosterFormat = 'vertical' | 'story' | 'square' | 'print'
 export type PosterLayout = 'cartell' | 'columna' | 'quadrícula'
@@ -50,6 +53,21 @@ export interface PosterTemplate {
   id: string
   name: string
   design: PosterDesign
+}
+
+export interface PosterAssistantContext {
+  referenceDate: string
+  design: PosterDesign
+  templates: Array<{ name: string; design: PosterDesign }>
+  dates: Array<{ date?: string; name?: string; city?: string; hidden: boolean; past: boolean }>
+  sourceConcertCount: number
+  concertsTruncated: boolean
+  pageSize: number
+  pageCount: number
+  hiddenDateCount: number
+  excludedPastCount: number
+  logoAvailable: boolean
+  backgroundImageIncluded: false
 }
 
 export const defaultPosterDesign: PosterDesign = {
@@ -150,6 +168,36 @@ export function parsePosterTemplates(value: string | null): PosterTemplate[] {
       return name ? [{ id: candidate.id.slice(0, 80), name, design: normalizePosterDesign(candidate.design) }] : []
     }).slice(0, 30)
   } catch { return [] }
+}
+
+export function posterAssistantContext(concerts: Concert[], today: string, savedDesign: string | null, savedTemplates: string | null, logoAvailable: boolean): PosterAssistantContext {
+  let rawDesign: unknown = null
+  try { rawDesign = savedDesign ? JSON.parse(savedDesign) : null } catch { /* Use the default design when local storage is malformed. */ }
+  const design = normalizePosterDesign(rawDesign)
+  const candidates = posterConcerts(concerts, today)
+  const dates = candidates.filter((item) => design.showPast || !item.past)
+  if (design.order === 'desc') dates.reverse()
+  const pageSize = posterPageSize(design)
+  return {
+    referenceDate: today,
+    design,
+    templates: parsePosterTemplates(savedTemplates).map(({ name, design: templateDesign }) => ({ name, design: templateDesign })),
+    dates: dates.map((item) => ({
+      date: design.showDate ? item.date : undefined,
+      name: design.showName ? item.hidden ? 'Per anunciar' : item.title : undefined,
+      city: !item.hidden && design.showCity && item.city ? item.city : undefined,
+      hidden: item.hidden,
+      past: item.past,
+    })),
+    sourceConcertCount: concerts.length,
+    concertsTruncated: concerts.length > 300,
+    pageSize,
+    pageCount: Math.max(1, Math.ceil(dates.length / pageSize)),
+    hiddenDateCount: dates.filter((item) => item.hidden).length,
+    excludedPastCount: candidates.filter((item) => item.past && !design.showPast).length,
+    logoAvailable,
+    backgroundImageIncluded: false,
+  }
 }
 
 export interface PosterMetrics {

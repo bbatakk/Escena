@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Check, Download, ImagePlus, RotateCcw, Save, Trash2, X } from 'lucide-react'
 import { posterConcerts, type Concert } from './model'
-import { defaultPosterDesign, drawPoster, normalizePosterDesign, parsePosterTemplates, posterFormatList, posterFormats, posterPageSize, type PosterAlign, type PosterDateFormat, type PosterDesign, type PosterDivider, type PosterFormat, type PosterImagePosition, type PosterLayout, type PosterTemplate, type PosterTypeface } from './poster'
-
-const settingsKey = 'escena-tour-poster-v1'
-const templatesKey = 'escena-tour-poster-templates-v1'
+import { defaultPosterDesign, drawPoster, normalizePosterDesign, parsePosterTemplates, posterFormatList, posterFormats, posterPageSize, posterSettingsStorageKey, posterTemplatesStorageKey, type PosterAlign, type PosterDateFormat, type PosterDesign, type PosterDivider, type PosterFormat, type PosterImagePosition, type PosterLayout, type PosterTemplate, type PosterTypeface } from './poster'
 
 const layoutOptions: { value: PosterLayout; label: string; description: string }[] = [
   { value: 'cartell', label: 'Cartell', description: 'Dates en primer pla' },
@@ -24,12 +21,12 @@ const logoOptions: { value: PosterDesign['logoPosition']; label: string }[] = [{
 
 function storedDesign(): PosterDesign {
   try {
-    return normalizePosterDesign(JSON.parse(localStorage.getItem(settingsKey) || 'null'))
+    return normalizePosterDesign(JSON.parse(localStorage.getItem(posterSettingsStorageKey) || 'null'))
   } catch { return defaultPosterDesign }
 }
 
 function storedTemplates(): PosterTemplate[] {
-  try { return parsePosterTemplates(localStorage.getItem(templatesKey)) }
+  try { return parsePosterTemplates(localStorage.getItem(posterTemplatesStorageKey)) }
   catch { return [] }
 }
 
@@ -79,7 +76,7 @@ export default function TourPoster({ concerts, bandName, logoUrl }: { concerts: 
   const currentPage = Math.min(page, pages - 1)
   const onPage = dates.slice(currentPage * perPage, (currentPage + 1) * perPage)
 
-  useEffect(() => { try { localStorage.setItem(settingsKey, JSON.stringify(design)) } catch { /* The poster still works if storage is full. */ } }, [design])
+  useEffect(() => { try { localStorage.setItem(posterSettingsStorageKey, JSON.stringify(design)) } catch { /* The poster still works if storage is full. */ } }, [design])
   useEffect(() => {
     if (!logoUrl) { setLogo(undefined); return }
     let active = true
@@ -125,7 +122,7 @@ export default function TourPoster({ concerts, bandName, logoUrl }: { concerts: 
 
   function saveTemplates(next: PosterTemplate[]): boolean {
     try {
-      localStorage.setItem(templatesKey, JSON.stringify(next))
+      localStorage.setItem(posterTemplatesStorageKey, JSON.stringify(next))
       setTemplates(next)
       setError('')
       return true

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { defaultPosterDesign, normalizePosterDesign, parsePosterTemplates, posterColumns, posterMetrics, posterPageSize, type PosterDesign } from './poster'
+import { defaultPosterDesign, normalizePosterDesign, parsePosterTemplates, posterAssistantContext, posterColumns, posterMetrics, posterPageSize, type PosterDesign } from './poster'
+import { newConcert } from './model'
 
 describe('columnes del cartell de gira', () => {
   const design = (changes: Partial<PosterDesign>): PosterDesign => ({ ...defaultPosterDesign, ...changes })
@@ -88,5 +89,29 @@ describe('plantilles del cartell', () => {
   it('normalitza un disseny antic sense perdre els camps amb valors vàlids', () => {
     expect(normalizePosterDesign({ layout: 'quadrícula', title: 'Gira!', columns: 2 })).toMatchObject({ layout: 'quadrícula', divider: 'block', title: 'Gira!', columns: 2 })
     expect(normalizePosterDesign(null)).toEqual(defaultPosterDesign)
+  })
+})
+
+describe('context del cartell per a l’assistent', () => {
+  it('projecta les dates tal com es publiquen i no revela concerts sense permís', () => {
+    const visible = { ...newConcert(), id: 'visible', title: 'Festa Major', date: '2026-10-12', status: 'confirmat' as const, city: 'Reus', details: { ...newConcert().details, announceable: true } }
+    const hidden = { ...newConcert(), id: 'hidden', title: 'Acte privat', date: '2026-10-13', status: 'confirmat' as const, city: 'Tarragona' }
+    const result = posterAssistantContext([visible, hidden], '2026-10-01', JSON.stringify({ ...defaultPosterDesign, columns: 2 }), JSON.stringify([{ id: 'summer', name: 'Estiu', design: defaultPosterDesign }]), true)
+    expect(result).toMatchObject({ pageSize: expect.any(Number), pageCount: 1, hiddenDateCount: 1, logoAvailable: true, backgroundImageIncluded: false, templates: [{ name: 'Estiu' }] })
+    expect(result.dates).toEqual([
+      { date: '2026-10-12', name: 'Festa Major', city: 'Reus', hidden: false, past: false },
+      { date: '2026-10-13', name: 'Per anunciar', hidden: true, past: false },
+    ])
+    expect(JSON.stringify(result)).not.toContain('Acte privat')
+    expect(JSON.stringify(result)).not.toContain('Tarragona')
+  })
+
+  it('respecta les opcions que amaguen concerts passats, dates, noms i poblacions', () => {
+    const concert = { ...newConcert(), id: 'past', title: 'Concert passat', date: '2026-09-01', status: 'realitzat' as const, city: 'Girona', details: { ...newConcert().details, announceable: true } }
+    const hiddenPast = posterAssistantContext([concert], '2026-10-01', JSON.stringify({ ...defaultPosterDesign, showPast: false }), null, false)
+    expect(hiddenPast.dates).toEqual([])
+    expect(hiddenPast.excludedPastCount).toBe(1)
+    const noFields = posterAssistantContext([concert], '2026-08-01', JSON.stringify({ ...defaultPosterDesign, showDate: false, showName: false, showCity: false }), null, false)
+    expect(noFields.dates).toEqual([{ hidden: false, past: false }])
   })
 })
