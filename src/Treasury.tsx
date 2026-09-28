@@ -3,6 +3,8 @@ import { ArrowDownLeft, ArrowUpRight, Pencil, Plus, Trash2, X } from 'lucide-rea
 import { deleteMoneyMovement, listMerchSales, listMoneyMovements, saveMoneyMovement } from './data'
 import { createId, formatDate, formatMoney, generatedTreasuryMovements, moneyMovementBalance, type Concert, type LabelAgreement, type MerchSale, type MoneyMovement, type MoneyMovementKind, type MoneyMovementPaymentMethod } from './model'
 
+const movementPageSize = 20
+
 function today(): string { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` }
 
 export default function Treasury({ concerts, labelAgreement }: { concerts: Concert[]; labelAgreement: LabelAgreement | null }) {
@@ -19,6 +21,7 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -50,6 +53,7 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
     try {
       const saved = await saveMoneyMovement({ id: editingId || createId(), kind, paymentMethod, amount: numericAmount, date, category: category.trim() || (kind === 'ingres' ? 'Altres ingressos' : 'Altres despeses'), note: note.trim(), concertId: concertId || undefined })
       setMovements((previous) => editingId ? previous.map((item) => item.id === saved.id ? saved : item) : [saved, ...previous])
+      if (!editingId) setPage(0)
       resetForm()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'No s’ha pogut desar el moviment.') }
     finally { setBusy(false) }
@@ -72,6 +76,11 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
   const expenses = displayedMovements.filter((item) => item.kind === 'despesa').reduce((sum, item) => sum + item.amount, 0)
   const bankBalance = moneyMovementBalance(displayedMovements, 'bank')
   const cashBalance = moneyMovementBalance(displayedMovements, 'cash')
+  const pageCount = Math.max(1, Math.ceil(displayedMovements.length / movementPageSize))
+  const currentPage = Math.min(page, pageCount - 1)
+  const pageStart = currentPage * movementPageSize
+  const visibleMovements = displayedMovements.slice(pageStart, pageStart + movementPageSize)
+  useEffect(() => { setPage((previous) => Math.min(previous, pageCount - 1)) }, [pageCount])
   const concertName = (id?: string) => id ? concerts.find((item) => item.id === id)?.title || 'Concert eliminat' : 'General'
 
   return <div className="treasury-shell">
@@ -81,7 +90,13 @@ export default function Treasury({ concerts, labelAgreement }: { concerts: Conce
       <section className="form-card money-add"><div className="section-heading"><span className="section-index">{editingId ? <Pencil size={16} /> : <Plus size={17} />}</span><div><h2>{editingId ? 'Editar moviment' : 'Nou moviment'}</h2><p>Un apunt real, no un resum automàtic.</p></div></div>
         <form className="fields" onSubmit={(event) => void save(event)}><div className="money-kind"><button type="button" className={kind === 'ingres' ? 'kind-active income-kind' : ''} onClick={() => setKind('ingres')}><ArrowDownLeft size={16} /> Ingrés</button><button type="button" className={kind === 'despesa' ? 'kind-active expense-kind' : ''} onClick={() => setKind('despesa')}><ArrowUpRight size={16} /> Despesa</button></div><label className="field">Import (€) <input required type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0,00" /></label><label className="field">Compte <select required value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as MoneyMovementPaymentMethod)}><option value="bank">Compte bancari</option><option value="cash">Efectiu</option></select></label><div className="two-col"><label className="field">Data <input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label className="field">Categoria <input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Catxet, gasolina…" /></label></div><label className="field">Concert (opcional) <select value={concertId} onChange={(event) => setConcertId(event.target.value)}><option value="">Moviment general</option>{concerts.map((concert) => <option key={concert.id} value={concert.id}>{concert.title || 'Concert sense nom'}</option>)}</select></label><label className="field">Nota <textarea rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Informació útil per revisar-ho més endavant" /></label><button className="button button-primary" type="submit" disabled={busy}>{editingId ? 'Desar canvis' : 'Afegir moviment'}</button>{editingId ? <button className="button button-secondary" type="button" disabled={busy} onClick={resetForm}><X size={15} /> Cancel·lar</button> : null}</form>
       </section>
-      <section className="money-list"><div className="money-list-head"><span className="eyebrow">MOVIMENTS · {displayedMovements.length}</span></div>{loading ? <p className="section-empty">Carregant moviments…</p> : displayedMovements.length ? displayedMovements.map((item) => <article className="money-row" key={`${item.sourceType || 'manual'}-${item.id}`}><div className={`money-icon ${item.kind}`} aria-hidden="true">{item.kind === 'ingres' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}</div><div className="money-row-main"><strong>{item.category || (item.kind === 'ingres' ? 'Ingrés' : 'Despesa')}</strong><small>{item.paymentMethod === 'cash' ? 'Efectiu' : 'Compte bancari'} · {formatDate(item.date)} · {concertName(item.concertId)}{item.note ? ` · ${item.note}` : ''}</small></div><strong className={item.kind === 'ingres' ? 'positive-money' : 'negative-money'}>{item.kind === 'ingres' ? '+' : '−'}{formatMoney(item.amount)}</strong>{item.sourceType ? <span className="money-auto-label">Generat</span> : <div className="resource-row-actions"><button className="icon-button" type="button" disabled={busy} aria-label={`Editar moviment ${item.category}`} title="Editar moviment" onClick={() => edit(item)}><Pencil size={14} /></button><button className="icon-button" type="button" disabled={busy} aria-label={`Eliminar moviment ${item.category}`} title="Eliminar moviment" onClick={() => void remove(item.id)}><Trash2 size={14} /></button></div>}</article>) : <p className="section-empty">Encara no hi ha moviments de tresoreria.</p>}</section>
+      <section className="money-list">
+        <div className="money-list-head"><span className="eyebrow">MOVIMENTS · {displayedMovements.length}</span>{displayedMovements.length ? <small>Mostrant {pageStart + 1}–{Math.min(pageStart + movementPageSize, displayedMovements.length)} de {displayedMovements.length}</small> : null}</div>
+        {loading ? <p className="section-empty">Carregant moviments…</p> : displayedMovements.length ? <>
+          {visibleMovements.map((item) => <article className="money-row" key={`${item.sourceType || 'manual'}-${item.id}`}><div className={`money-icon ${item.kind}`} aria-hidden="true">{item.kind === 'ingres' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}</div><div className="money-row-main"><strong>{item.category || (item.kind === 'ingres' ? 'Ingrés' : 'Despesa')}</strong><small>{item.paymentMethod === 'cash' ? 'Efectiu' : 'Compte bancari'} · {formatDate(item.date)} · {concertName(item.concertId)}{item.note ? ` · ${item.note}` : ''}</small></div><strong className={item.kind === 'ingres' ? 'positive-money' : 'negative-money'}>{item.kind === 'ingres' ? '+' : '−'}{formatMoney(item.amount)}</strong>{item.sourceType ? <span className="money-auto-label">Generat</span> : <div className="resource-row-actions"><button className="icon-button" type="button" disabled={busy} aria-label={`Editar moviment ${item.category}`} title="Editar moviment" onClick={() => edit(item)}><Pencil size={14} /></button><button className="icon-button" type="button" disabled={busy} aria-label={`Eliminar moviment ${item.category}`} title="Eliminar moviment" onClick={() => void remove(item.id)}><Trash2 size={14} /></button></div>}</article>)}
+          {pageCount > 1 ? <nav className="money-pagination" aria-label="Paginació dels moviments"><button type="button" className="button button-secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Anterior</button><span aria-live="polite">Pàgina {currentPage + 1} de {pageCount}</span><button type="button" className="button button-secondary" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>Següent</button></nav> : null}
+        </> : <p className="section-empty">Encara no hi ha moviments de tresoreria.</p>}
+      </section>
     </div>{error ? <div className="global-error" role="alert">{error}</div> : null}
   </div>
 }
