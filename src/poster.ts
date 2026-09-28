@@ -19,13 +19,14 @@ export interface PosterDesign {
   accent: string
   fontSize: number
   spacing: number
+  columns: number
   imageShade: number
   showLogo: boolean
 }
 
 export const defaultPosterDesign: PosterDesign = {
   format: 'vertical', layout: 'cartell', typeface: 'impacte', order: 'asc', logoPosition: 'right', title: 'EN DIRECTE', subtitle: 'DATES DE GIRA', footer: 'ENS VEIEM A LA CARRETERA',
-  background: '#162542', foreground: '#fff8ee', accent: '#f4a57b', fontSize: 45, spacing: 12, imageShade: 78, showLogo: true,
+  background: '#162542', foreground: '#fff8ee', accent: '#f4a57b', fontSize: 45, spacing: 12, columns: 1, imageShade: 78, showLogo: true,
 }
 
 export const posterFormats: Record<PosterFormat, { label: string; width: number; height: number }> = {
@@ -35,11 +36,16 @@ export const posterFormats: Record<PosterFormat, { label: string; width: number;
   print: { label: 'A4 per imprimir', width: 2480, height: 3508 },
 }
 
+export function posterColumns(design: PosterDesign): number {
+  if (typeof design.columns === 'number' && design.columns >= 1 && design.columns <= 4) return Math.round(design.columns)
+  return design.layout === 'quadrícula' ? 2 : 1
+}
+
 export function posterPageSize(design: PosterDesign): number {
   const height = posterFormats[design.format].height / (posterFormats[design.format].width / 1080)
   const rowHeight = design.layout === 'quadrícula' ? Math.max(142, design.fontSize * 2.65 + design.spacing * 2) : Math.max(102, design.fontSize * 2.25 + design.spacing * 2)
   const rows = Math.max(1, Math.floor((height - 338 - 170) / rowHeight))
-  return design.layout === 'quadrícula' ? rows * 2 : rows
+  return rows * posterColumns(design)
 }
 
 function fontFor(design: PosterDesign): string {
@@ -104,16 +110,19 @@ export function drawPoster(canvas: HTMLCanvasElement, design: PosterDesign, conc
   ctx.fillText(fit(ctx, bandName.toLocaleUpperCase('ca'), 850), 76, 240)
   ctx.fillRect(76, 300, 928, 3)
 
+  const columns = posterColumns(design)
   const rowHeight = design.layout === 'quadrícula' ? Math.max(142, design.fontSize * 2.65 + design.spacing * 2) : Math.max(102, design.fontSize * 2.25 + design.spacing * 2)
   const rowTop = 338
+  const columnGap = 24
+  const columnWidth = (928 - columnGap * (columns - 1)) / columns
+  const perColumn = Math.max(1, Math.ceil(concerts.length / columns))
   concerts.forEach((concert, index) => {
-    const grid = design.layout === 'quadrícula'
-    const x = grid ? 76 + index % 2 * 474 : 76
-    const y = rowTop + Math.floor(grid ? index / 2 : index) * rowHeight
-    const itemWidth = grid ? 452 : 928
+    const x = 76 + Math.floor(index / perColumn) * (columnWidth + columnGap)
+    const y = rowTop + index % perColumn * rowHeight
+    const itemWidth = columnWidth
     const rowForeground = concert.past ? '#969ba4' : design.foreground
     const rowAccent = concert.past ? '#858c96' : design.accent
-    if (grid) {
+    if (design.layout === 'quadrícula') {
       ctx.fillStyle = rowForeground
       ctx.globalAlpha = 0.08
       ctx.fillRect(x, y, itemWidth, rowHeight - 12)
@@ -126,34 +135,37 @@ export function drawPoster(canvas: HTMLCanvasElement, design: PosterDesign, conc
     }
 
     if (design.layout === 'columna') {
+      const gutter = Math.min(240, itemWidth * 0.42)
       ctx.fillStyle = rowAccent
       ctx.font = '600 29px "IBM Plex Mono", monospace'
       ctx.fillText(dateLabel(concert.date), x + 8, y + 20)
       ctx.fillStyle = rowForeground
       ctx.font = `700 ${design.fontSize}px ${display}`
-      ctx.fillText(fit(ctx, concert.hidden ? 'PER ANUNCIAR' : concert.title, 680), x + 240, y + 14)
+      ctx.fillText(fit(ctx, concert.hidden ? 'PER ANUNCIAR' : concert.title, itemWidth - gutter - 16), x + gutter + 8, y + 14)
       if (!concert.hidden && concert.city) {
         ctx.fillStyle = rowForeground
         ctx.globalAlpha = 0.76
         ctx.font = '500 23px "Space Grotesk", sans-serif'
-        ctx.fillText(fit(ctx, concert.city, 680), x + 241, y + 20 + design.fontSize)
+        ctx.fillText(fit(ctx, concert.city, itemWidth - gutter - 17), x + gutter + 9, y + 20 + design.fontSize)
         ctx.globalAlpha = 1
       }
     } else {
+      const grid = design.layout === 'quadrícula'
       const textX = x + (grid ? 22 : 8)
       const textY = y + (grid ? 14 : 12)
+      const textWidth = itemWidth - (grid ? 44 : 24)
       ctx.fillStyle = rowAccent
       ctx.font = '600 26px "IBM Plex Mono", monospace'
       ctx.fillText(dateLabel(concert.date), textX, textY)
       ctx.fillStyle = rowForeground
       ctx.font = `700 ${design.fontSize}px ${display}`
       const line = concert.hidden ? 'PER ANUNCIAR' : concert.title
-      ctx.fillText(fit(ctx, line, itemWidth - (grid ? 44 : 24)), textX, textY + 34)
+      ctx.fillText(fit(ctx, line, textWidth), textX, textY + 34)
       if (!concert.hidden && concert.city) {
         ctx.fillStyle = rowForeground
         ctx.globalAlpha = 0.76
         ctx.font = '500 22px "Space Grotesk", sans-serif'
-        ctx.fillText(fit(ctx, concert.city, itemWidth - (grid ? 44 : 24)), textX, textY + 42 + design.fontSize)
+        ctx.fillText(fit(ctx, concert.city, textWidth), textX, textY + 42 + design.fontSize)
         ctx.globalAlpha = 1
       }
     }
