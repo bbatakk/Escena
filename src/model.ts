@@ -67,6 +67,52 @@ export interface BandDocument {
   archived: boolean
 }
 
+export type SongProjectStatus = 'idea' | 'en_proces' | 'demo' | 'maqueta' | 'en_pausa' | 'tancada'
+export type SongVersionKind = 'idea_gravada' | 'demo' | 'maqueta' | 'altra'
+
+export interface SongProject {
+  id: string
+  updatedAt?: string
+  title: string
+  status: SongProjectStatus
+  notes: string
+  lyrics: string
+  archived: boolean
+  createdAt?: string
+}
+
+export interface SongVersion {
+  id: string
+  songId: string
+  updatedAt?: string
+  name: string
+  kind: SongVersionKind
+  recordedOn: string
+  notes: string
+  externalUrl: string
+  audioPath?: string
+  audioFileName?: string
+  audioMimeType?: string
+  audioSizeBytes?: number
+  createdAt?: string
+}
+
+export const songStatusLabels: Record<SongProjectStatus, string> = {
+  idea: 'Idea',
+  en_proces: 'En procés',
+  demo: 'Demo',
+  maqueta: 'Maqueta',
+  en_pausa: 'En pausa',
+  tancada: 'Tancada',
+}
+
+export const songVersionKindLabels: Record<SongVersionKind, string> = {
+  idea_gravada: 'Idea gravada',
+  demo: 'Demo',
+  maqueta: 'Maqueta',
+  altra: 'Altra',
+}
+
 export type MoneyMovementKind = 'ingres' | 'despesa'
 export type MoneyMovementPaymentMethod = 'bank' | 'cash'
 

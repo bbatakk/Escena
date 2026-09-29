@@ -13,14 +13,13 @@ Una banda gestiona tota la informació d'un concert, des de l'acord fins al cobr
 
 ## Primer lliurable implementat
 
-Accés amb Supabase quan està configurat; demo local si no. Llista i calendari; crear, editar i eliminar concerts; fitxa amb acord, contactes, horaris, logística, hospitalitat, documents com a enllaços/estat i fitxers privats adjunts, apartats separats de persones, material i setlists reutilitzables, biblioteca de documents, tresoreria bàsica, catàleg de marxandatge amb talles i estoc per variant, venda ràpida per concert, material marcable, acreditacions i imports-resum; pendents derivats. RLS de banda a les migracions SQL.
+Accés amb Supabase quan està configurat; demo local si no. Llista i calendari; crear, editar i eliminar concerts; fitxa amb acord, contactes, horaris, logística, hospitalitat, documents com a enllaços/estat i fitxers privats adjunts, apartats separats de persones, material i setlists reutilitzables, biblioteca de documents, tresoreria bàsica, catàleg de marxandatge amb talles i estoc per variant, venda ràpida per concert, material marcable, acreditacions i imports-resum; pendents derivats. També inclou un taller de cançons en procés amb lletra, notes, fases i versions d’àudio privades, separat dels setlists i sense convertir-se en una discografia. RLS de banda a les migracions SQL.
 
 ## Següents lliurables
 
 1. Retirar gradualment els camps de tancament antics quan totes les bandes facin servir els moviments reals. La fitxa ja calcula un balanç sense duplicar catxet, vendes detallades ni moviments manuals.
-2. Ampliar la PWA offline als documents i reforçar la resolució de conflictes concurrents. Ja es mostren els canvis pendents/error, i la cua inclou concerts, tresoreria, marxandatge i recursos de banda.
+2. Ampliar la PWA offline als documents i fitxers d’àudio, i reforçar la resolució de conflictes concurrents. Ja es mostren els canvis pendents/error, i la cua inclou concerts, tresoreria, marxandatge, recursos de banda i metadades de cançons.
 3. Comptes individuals, invitacions i permisos si l'ús real ho justifica.
-
 La migració 007 deixa preparats `role` a `band_members` i `band_invitations`, però la UI continua deliberadament amb compte compartit. No s'han d'activar permisos parcials sense dissenyar abans el flux d'invitació, acceptació i recuperació de compte.
 
 No representar les funcions dels següents lliurables com si ja estiguessin acabades.

@@ -1,14 +1,14 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight,
+  ArrowLeft, ArrowRight, AudioLines, CalendarDays, Check, ChevronLeft, ChevronRight,
   CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu,
   House, ListMusic, LogOut, Mail, MapPinned, Music2, Navigation, PackageCheck, Paperclip, Pencil, Phone, Plus, Search, ShoppingBag, Sparkles, Ticket, Trash2, Image as ImageIcon,
   Settings as SettingsIcon, UsersRound, Wallet, X,
 } from 'lucide-react'
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
-import { cloudConfigured, deleteConcert, deleteMerchSale, discardOfflineDataChange, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, getOfflineSyncStatus, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, listResource, removeConcertDocumentFile, resolveOfflineConcertConflict, resolveOfflineDataConflict, saveConcert, saveMerchSale, saveResource, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument, type OfflineSyncItem } from './data'
+import { cloudConfigured, deleteConcert, deleteMerchSale, discardOfflineDataChange, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, getOfflineSyncStatus, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, listResource, removeConcertDocumentFile, resolveOfflineConcertConflict, resolveOfflineDataConflict, saveConcert, saveMerchSale, saveResource, setDataSessionOwner, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument, type OfflineSyncItem } from './data'
 import { concertClosingSummary, concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, shouldMarkConcertRealized, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 import { useDialogFocus } from './useDialogFocus'
@@ -19,8 +19,9 @@ const Merch = lazy(() => import('./Merch'))
 const BandPeople = lazy(() => import('./BandPeople'))
 const BandMaterials = lazy(() => import('./BandMaterials'))
 const Setlists = lazy(() => import('./Setlists'))
+const Songs = lazy(() => import('./Songs'))
 const TourPoster = lazy(() => import('./TourPoster'))
-type Screen = 'home' | 'list' | 'calendar' | 'detail' | 'form' | 'assistant' | 'library' | 'treasury' | 'merch' | 'people' | 'materials' | 'setlists' | 'poster' | 'settings'
+type Screen = 'home' | 'list' | 'calendar' | 'detail' | 'form' | 'assistant' | 'library' | 'treasury' | 'merch' | 'people' | 'materials' | 'setlists' | 'songs' | 'poster' | 'settings'
 interface AppHistoryState { escena: true; screen: Screen; selectedId?: string; formInitial?: Concert }
 
 function safeLink(value: string): string | null {
@@ -322,6 +323,7 @@ export default function App() {
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [offlineSyncStatus, setOfflineSyncStatus] = useState(() => getOfflineSyncStatus())
   const formDirtyRef = useRef(false)
+  const songsDirtyRef = useRef(false)
   const formExitApprovedRef = useRef(false)
   const formHistoryRef = useRef<AppHistoryState | null>(null)
 
@@ -332,6 +334,13 @@ export default function App() {
     if (leave) { formExitApprovedRef.current = true; updateFormDirty(false) }
     return leave
   }
+  function confirmLeaveSongs(): boolean {
+    if (screen !== 'songs' || !songsDirtyRef.current) return true
+    const leave = window.confirm('Hi ha canvis sense desar a la cançó o la versió. Vols sortir igualment?')
+    if (leave) songsDirtyRef.current = false
+    return leave
+  }
+  function confirmLeaveEditor(): boolean { return confirmLeaveForm() && confirmLeaveSongs() }
 
   useEffect(() => { localStorage.setItem('escena-theme', theme); document.documentElement.dataset.theme = theme }, [theme])
 
@@ -353,8 +362,8 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true) }).catch(() => { setSession(null); setAuthReady(true) })
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => setSession(current))
+    supabase.auth.getSession().then(({ data }) => { setDataSessionOwner(data.session?.user.id); setSession(data.session); setAuthReady(true) }).catch(() => { setDataSessionOwner(); setSession(null); setAuthReady(true) })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => { setDataSessionOwner(current?.user.id); setSession(current) })
     return () => listener.subscription.unsubscribe()
   }, [])
 
@@ -363,9 +372,9 @@ export default function App() {
     const restore = (event: PopStateEvent) => {
       const state = event.state as AppHistoryState | null
       if (!state?.escena) return
-      if (screen === 'form' && formDirtyRef.current) {
-        window.history.pushState(formHistoryRef.current || { escena: true, screen: 'form', formInitial: formInitial || undefined }, '')
-        if (confirmLeaveForm()) window.history.back()
+      if ((screen === 'form' && formDirtyRef.current) || (screen === 'songs' && songsDirtyRef.current)) {
+        window.history.pushState(screen === 'form' ? formHistoryRef.current || { escena: true, screen: 'form', formInitial: formInitial || undefined } : { escena: true, screen: 'songs' }, '')
+        if (confirmLeaveEditor()) window.history.back()
         return
       }
       setScreen(state.screen)
@@ -424,10 +433,10 @@ export default function App() {
   const next = sorted.find((item) => item.date >= todayString && item.status !== 'cancel·lat')
   const totalPending = concerts.reduce((sum, item) => sum + getPending(item).length, 0)
 
-  function open(id: string, replace = false) { if (!confirmLeaveForm()) return; const state: AppHistoryState = { escena: true, screen: 'detail', selectedId: id }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setSelectedId(id); setFormInitial(null); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
-  function navigate(to: Screen, replace = false) { if (!confirmLeaveForm()) return; if (!replace && screen === to && !selectedId) { setMenuOpen(false); return }; const state: AppHistoryState = { escena: true, screen: to }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setScreen(to); setSelectedId(null); setFormInitial(null); setMenuOpen(false); window.scrollTo(0, 0) }
+  function open(id: string, replace = false) { if (!confirmLeaveEditor()) return; const state: AppHistoryState = { escena: true, screen: 'detail', selectedId: id }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setSelectedId(id); setFormInitial(null); setScreen('detail'); setMenuOpen(false); window.scrollTo(0, 0) }
+  function navigate(to: Screen, replace = false) { if (!confirmLeaveEditor()) return; if (!replace && screen === to && !selectedId) { setMenuOpen(false); return }; const state: AppHistoryState = { escena: true, screen: to }; window.history[replace ? 'replaceState' : 'pushState'](state, ''); setScreen(to); setSelectedId(null); setFormInitial(null); setMenuOpen(false); window.scrollTo(0, 0) }
   function startForm(initial: Concert, recoverNewDraft = true) {
-    if (!confirmLeaveForm()) return
+    if (!confirmLeaveEditor()) return
     formExitApprovedRef.current = false
     if (recoverNewDraft && !initial.updatedAt && !initial.title) {
       try {
@@ -530,16 +539,16 @@ export default function App() {
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><BrandName /><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">BANDA O ARTISTA</div><button type="button" className={`workspace-name ${workspaceProfileLoading ? 'workspace-name-loading' : ''}`} aria-label={workspaceName ? `Configurar l’espai ${workspaceName}` : 'Configurar l’espai de la banda'} onClick={() => navigate('settings')}><div className="workspace-avatar">{workspaceLogo ? <img src={workspaceLogo} alt="" /> : workspaceProfileLoading ? <Music2 size={18} /> : workspaceName.trim().charAt(0).toUpperCase() || 'B'}</div><span>{workspaceName || (workspaceProfileLoading ? 'Carregant banda…' : 'Configura la banda')}</span><SettingsIcon size={16} /></button>
        <nav className="sidebar-nav" aria-label="Navegació principal">
          <div className="sidebar-nav-group"><span className="sidebar-nav-heading">Activitat</span><button className={screen === 'home' ? 'nav-active' : ''} onClick={() => navigate('home')}><House size={19} /> Inici</button><button className={screen === 'list' || screen === 'detail' || screen === 'form' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button></div>
-         <div className="sidebar-nav-group"><span className="sidebar-nav-heading">Recursos</span><button className={screen === 'people' ? 'nav-active' : ''} onClick={() => navigate('people')}><UsersRound size={19} /> Persones</button><button className={screen === 'materials' ? 'nav-active' : ''} onClick={() => navigate('materials')}><PackageCheck size={19} /> Material</button><button className={screen === 'setlists' ? 'nav-active' : ''} onClick={() => navigate('setlists')}><ListMusic size={19} /> Setlists</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button></div>
+          <div className="sidebar-nav-group"><span className="sidebar-nav-heading">Recursos</span><button className={screen === 'people' ? 'nav-active' : ''} onClick={() => navigate('people')}><UsersRound size={19} /> Persones</button><button className={screen === 'materials' ? 'nav-active' : ''} onClick={() => navigate('materials')}><PackageCheck size={19} /> Material</button><button className={screen === 'songs' ? 'nav-active' : ''} onClick={() => navigate('songs')}><AudioLines size={19} /> Cançons</button><button className={screen === 'setlists' ? 'nav-active' : ''} onClick={() => navigate('setlists')}><ListMusic size={19} /> Setlists</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button></div>
          <div className="sidebar-nav-group"><span className="sidebar-nav-heading">Gestió</span><button className={screen === 'treasury' ? 'nav-active' : ''} onClick={() => navigate('treasury')}><Wallet size={19} /> Tresoreria</button><button className={screen === 'merch' ? 'nav-active' : ''} onClick={() => navigate('merch')}><ShoppingBag size={19} /> Marxandatge</button></div>
          <div className="sidebar-nav-group"><span className="sidebar-nav-heading">Eines</span><button className={screen === 'poster' ? 'nav-active' : ''} onClick={() => navigate('poster')}><ImageIcon size={19} /> Cartell de gira</button><button className={screen === 'assistant' ? 'nav-active' : ''} onClick={() => navigate('assistant')}><Sparkles size={19} /> IA</button></div>
        </nav>
-      <div className="sidebar-bottom"><div className="sidebar-account"><div className="sidebar-account-copy"><strong>{session ? 'Sessió activa' : 'Demo local'}</strong><span>{session ? 'Espai de la banda' : 'Dades en aquest navegador'}</span></div>{session && supabase ? <button type="button" className="logout-button" aria-label="Tancar sessió" title="Tancar sessió" onClick={() => void supabase?.auth.signOut()}><LogOut size={15} /></button> : null}</div></div>
+      <div className="sidebar-bottom"><div className="sidebar-account"><div className="sidebar-account-copy"><strong>{session ? 'Sessió activa' : 'Demo local'}</strong><span>{session ? 'Espai de la banda' : 'Dades en aquest navegador'}</span></div>{session && supabase ? <button type="button" className="logout-button" aria-label="Tancar sessió" title="Tancar sessió" onClick={() => { if (confirmLeaveEditor()) void supabase?.auth.signOut() }}><LogOut size={15} /></button> : null}</div></div>
     </aside>
     {menuOpen ? <button className="mobile-overlay" aria-label="Tancar menú" onClick={() => setMenuOpen(false)} /> : null}
-       <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'home' ? 'Inici' : screen === 'calendar' ? 'Calendari' : screen === 'poster' ? 'Cartell de gira' : screen === 'assistant' ? 'IA' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : screen === 'treasury' ? 'Tresoreria' : screen === 'merch' ? 'Marxandatge' : screen === 'people' ? 'Persones' : screen === 'materials' ? 'Material' : screen === 'setlists' ? 'Setlists' : screen === 'settings' ? 'Configuració' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? (online ? 'EN LÍNIA' : 'SENSE CONNEXIÓ') : 'DEMO LOCAL'} <span className={`online-dot ${online ? '' : 'offline-dot'}`} /></span></header>
+       <main className="main-area"><header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label="Obrir menú" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="topbar-path">Espai de la banda <span>/</span> {screen === 'home' ? 'Inici' : screen === 'calendar' ? 'Calendari' : screen === 'poster' ? 'Cartell de gira' : screen === 'assistant' ? 'IA' : screen === 'detail' ? 'Fitxa del concert' : screen === 'form' ? 'Editar fitxa' : screen === 'library' ? 'Documents' : screen === 'treasury' ? 'Tresoreria' : screen === 'merch' ? 'Marxandatge' : screen === 'people' ? 'Persones' : screen === 'materials' ? 'Material' : screen === 'songs' ? 'Cançons' : screen === 'setlists' ? 'Setlists' : screen === 'settings' ? 'Configuració' : 'Concerts'}</span><span className="topbar-right">{cloudConfigured ? (online ? 'EN LÍNIA' : 'SENSE CONNEXIÓ') : 'DEMO LOCAL'} <span className={`online-dot ${online ? '' : 'offline-dot'}`} /></span></header>
       <div className="content-area">
-        {cloudConfigured && offlineSyncStatus.pending > 0 ? <section className={`offline-sync-panel ${offlineSyncStatus.failed ? 'offline-sync-failed' : ''}`} aria-live="polite"><div className="offline-sync-heading"><div><strong>{offlineSyncStatus.failed ? 'Canvis pendents de sincronitzar' : online ? 'Sincronitzant canvis' : 'Canvis desats en aquest dispositiu'}</strong><small>{offlineSyncStatus.failed ? `${offlineSyncStatus.failed} de ${offlineSyncStatus.pending} canvis necessiten atenció.` : `${offlineSyncStatus.pending} ${offlineSyncStatus.pending === 1 ? 'canvi pendent' : 'canvis pendents'}.`}</small></div>{online ? <button type="button" className="button button-secondary" onClick={() => void retryOfflineSync()}>Torna-ho a provar</button> : null}</div>{offlineSyncStatus.items.slice(0, 5).map((item) => <div className="offline-sync-item" key={item.key}><div><strong>{item.label}</strong>{item.message ? <small>{item.message}</small> : null}</div>{item.conflict && online && (item.kind === 'concert' || item.entity === 'money' || item.entity === 'product' || item.entity === 'resource') ? <div className="offline-conflict-actions"><button type="button" onClick={() => void chooseConflictVersion(item, 'local')}>Conservar els meus canvis</button><button type="button" onClick={() => void chooseConflictVersion(item, 'server')}>Fer servir la versió del servidor</button></div> : item.message && item.kind === 'data' && online ? <div className="offline-conflict-actions"><button type="button" onClick={() => void discardFailedOfflineData(item).catch((cause) => setError(cause instanceof Error ? cause.message : 'No s’ha pogut descartar el canvi.'))}>Descartar aquest canvi</button></div> : null}</div>)}{offlineSyncStatus.pending > 5 ? <small className="offline-sync-more">I {offlineSyncStatus.pending - 5} canvis més a la cua.</small> : null}</section> : null}
+         {cloudConfigured && offlineSyncStatus.pending > 0 ? <section className={`offline-sync-panel ${offlineSyncStatus.failed ? 'offline-sync-failed' : ''}`} aria-live="polite"><div className="offline-sync-heading"><div><strong>{offlineSyncStatus.failed ? 'Canvis pendents de sincronitzar' : online ? 'Sincronitzant canvis' : 'Canvis desats en aquest dispositiu'}</strong><small>{offlineSyncStatus.failed ? `${offlineSyncStatus.failed} de ${offlineSyncStatus.pending} canvis necessiten atenció.` : `${offlineSyncStatus.pending} ${offlineSyncStatus.pending === 1 ? 'canvi pendent' : 'canvis pendents'}.`}</small></div>{online ? <button type="button" className="button button-secondary" onClick={() => void retryOfflineSync()}>Torna-ho a provar</button> : null}</div>{offlineSyncStatus.items.slice(0, 5).map((item) => <div className="offline-sync-item" key={item.key}><div><strong>{item.label}</strong>{item.message ? <small>{item.message}</small> : null}</div>{item.conflict && online && (item.kind === 'concert' || item.entity === 'money' || item.entity === 'product' || item.entity === 'resource' || item.entity === 'song' || item.entity === 'song_version') ? <div className="offline-conflict-actions"><button type="button" onClick={() => void chooseConflictVersion(item, 'local')}>Conservar els meus canvis</button><button type="button" onClick={() => void chooseConflictVersion(item, 'server')}>Fer servir la versió del servidor</button></div> : item.message && item.kind === 'data' && online ? <div className="offline-conflict-actions"><button type="button" onClick={() => void discardFailedOfflineData(item).catch((cause) => setError(cause instanceof Error ? cause.message : 'No s’ha pogut descartar el canvi.'))}>Descartar aquest canvi</button></div> : null}</div>)}{offlineSyncStatus.pending > 5 ? <small className="offline-sync-more">I {offlineSyncStatus.pending - 5} canvis més a la cua.</small> : null}</section> : null}
         {error ? <div className="global-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Tancar avís"><X size={16} /></button></div> : null}
          {!cloudConfigured ? <div className="demo-banner">Estàs provant una demo local: els canvis es guarden només en aquest navegador. Connecta Supabase per compartir concerts entre dispositius.</div> : null}
          {loading ? <div className="content-loading">Carregant concerts…</div> : null}
@@ -551,6 +560,7 @@ export default function App() {
          {screen === 'people' ? <Suspense fallback={<div className="content-loading">Carregant persones…</div>}><BandPeople /></Suspense> : null}
          {screen === 'materials' ? <Suspense fallback={<div className="content-loading">Carregant material…</div>}><BandMaterials /></Suspense> : null}
          {screen === 'setlists' ? <Suspense fallback={<div className="content-loading">Carregant setlists…</div>}><Setlists /></Suspense> : null}
+         {screen === 'songs' ? <Suspense fallback={<div className="content-loading">Carregant cançons…</div>}><Songs onDirtyChange={(dirty) => { songsDirtyRef.current = dirty }} /></Suspense> : null}
           {screen === 'settings' && labelReady ? <Settings theme={theme} onThemeChange={(value: ThemeId) => { setTheme(value); document.documentElement.dataset.theme = value }} onImported={() => window.location.reload()} workspaceName={workspaceName} workspaceLogo={workspaceLogo} onWorkspaceNameChange={setWorkspaceName} onWorkspaceLogoChange={setWorkspaceLogo} labelAgreement={labelAgreement} onLabelChange={setLabelAgreement} /> : null}
            {screen === 'assistant' && labelReady ? <ConcertAssistant concerts={concerts} workspaceName={workspaceName} workspaceLogo={workspaceLogo} labelAgreement={labelAgreement} onWorkspaceNameChange={setWorkspaceName} onThemeChange={(value) => { setTheme(value); document.documentElement.dataset.theme = value }} onCreateDraft={(draft) => startForm(draft)} onUpdateConcert={(concert) => save(concert, false)} onSaveSetlist={createAssistantSetlist} onDeleteConcert={deleteAssistantConcert} onSavePerson={createAssistantPerson} /> : null}
          {!loading && screen === 'home' ? <HomeView concerts={concerts} onOpen={open} onNewConcert={() => startForm(newConcert())} onGoToConcerts={() => navigate('list')} onGoToCalendar={() => navigate('calendar')} /> : null}

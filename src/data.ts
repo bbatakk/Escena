@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { concertSettlement, merchRevenueByConcert, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, emptyDetails, validateLabelAgreement } from './model'
+import { concertSettlement, merchRevenueByConcert, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, type SongProject, type SongVersion, emptyDetails, validateLabelAgreement } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -7,7 +7,9 @@ export const cloudConfigured = Boolean(url && key)
 export const supabase = cloudConfigured ? createClient(url, key) : null
 const documentBucket = 'concert-documents'
 const merchImageBucket = 'merch-product-images'
+const songFileBucket = 'song-files'
 const maxDocumentBytes = 20 * 1024 * 1024
+const maxSongFileBytes = 50 * 1024 * 1024
 
 function storageErrorMessage(error: { message?: string; statusCode?: string | number }): Error {
   const message = error.message || 'Error desconegut de Storage.'
@@ -31,9 +33,19 @@ const bandNameKey = 'escena-demo-band-name-v1'
 const bandLogoKey = 'escena-demo-band-logo-v1'
 const bandLogoUrlCacheKey = 'escena-band-logo-url-v1'
 const bandLabelKey = 'escena-band-label-v1'
+const songProjectsKey = 'escena-song-projects-v1'
+const songVersionsKey = 'escena-song-versions-v1'
 const defaultBandName = 'La nostra banda'
+let dataSessionOwner = supabase ? 'anonymous' : 'local'
 
-export const backupVersion = 1
+export function setDataSessionOwner(userId?: string): void {
+  dataSessionOwner = userId || (supabase ? 'anonymous' : 'local')
+}
+
+function songProjectsCacheKey(): string { return `${songProjectsKey}-${dataSessionOwner}` }
+function songVersionsCacheKey(): string { return `${songVersionsKey}-${dataSessionOwner}` }
+
+export const backupVersion = 2
 export interface AppBackup {
   version: number
   exportedAt: string
@@ -48,12 +60,15 @@ export interface AppBackup {
   people: BandPerson[]
   materials: BandMaterial[]
   setlists: SetlistTemplate[]
+  songProjects?: SongProject[]
+  songVersions?: SongVersion[]
 }
 
 export async function exportBackup(): Promise<AppBackup> {
-  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists, workspaceName, labelAgreement] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), getBandName(), getBandLabel()])
+  const [concerts, library, money, merchProducts, merchSales, people, materials, setlists, songProjects, songVersions, workspaceName, labelAgreement] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), listSongProjects(), listSongVersions(), getBandName(), getBandLabel()])
   const safeProducts = supabase ? merchProducts.map((product) => ({ ...product, imagePath: undefined, imageUrl: undefined, imageDataUrl: undefined })) : merchProducts
-  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, labelAgreement, concerts, library, money: money.filter((movement) => !movement.sourceType), merchProducts: safeProducts, merchSales, people, materials, setlists }
+  const safeVersions = songVersions.map((version) => ({ ...version, audioPath: undefined }))
+  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, labelAgreement, concerts, library, money: money.filter((movement) => !movement.sourceType), merchProducts: safeProducts, merchSales, people, materials, setlists, songProjects, songVersions: safeVersions }
 }
 
 function validLabel(value: unknown): boolean {
@@ -75,7 +90,18 @@ export function validateBackup(value: unknown): value is AppBackup {
   const validDocument = (item: unknown) => isRecord(item) && hasId(item) && typeof item.name === 'string' && typeof item.url === 'string' && (item.direction === 'enviar' || item.direction === 'rebre') && (item.status === 'pendent' || item.status === 'fet' || item.status === 'no_cal') && (item.storagePath === undefined || typeof item.storagePath === 'string') && (item.fileName === undefined || typeof item.fileName === 'string')
   const validConcertMaterial = (item: unknown) => isRecord(item) && hasId(item) && typeof item.name === 'string' && typeof item.loaded === 'boolean' && (item.category === undefined || typeof item.category === 'string')
   const validScheduleItem = (item: unknown) => isRecord(item) && hasId(item) && ['time', 'label', 'place', 'kind'].every((key) => item[key] === undefined || typeof item[key] === 'string')
-  return backup.version === backupVersion && (backup.workspaceName === undefined || (typeof backup.workspaceName === 'string' && backup.workspaceName.trim().length > 0 && backup.workspaceName.length <= 80))
+  const validBackupUrl = (item: unknown) => {
+    if (item === '') return true
+    if (typeof item !== 'string') return false
+    try { return ['http:', 'https:'].includes(new URL(item).protocol) } catch { return false }
+  }
+  const audioTypes = ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav']
+  const validSongProject = (item: unknown) => isRecord(item) && hasId(item) && typeof item.title === 'string' && item.title.trim().length > 0 && item.title.length <= 200 && ['idea', 'en_proces', 'demo', 'maqueta', 'en_pausa', 'tancada'].includes(String(item.status)) && typeof item.notes === 'string' && typeof item.lyrics === 'string' && typeof item.archived === 'boolean'
+  const validSongVersion = (item: unknown) => isRecord(item) && hasId(item) && typeof item.songId === 'string' && item.songId.length > 0 && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 200 && ['idea_gravada', 'demo', 'maqueta', 'altra'].includes(String(item.kind)) && isDate(item.recordedOn) && typeof item.notes === 'string' && validBackupUrl(item.externalUrl) && item.audioPath === undefined && (item.audioFileName === undefined || typeof item.audioFileName === 'string') && (item.audioMimeType === undefined || audioTypes.includes(String(item.audioMimeType))) && (item.audioSizeBytes === undefined || (typeof item.audioSizeBytes === 'number' && item.audioSizeBytes > 0 && item.audioSizeBytes <= maxSongFileBytes))
+  const validSongData = Array.isArray(backup.songProjects) && backup.songProjects.every(validSongProject) && new Set(backup.songProjects.map((project) => project.id)).size === backup.songProjects.length
+    && Array.isArray(backup.songVersions) && backup.songVersions.every(validSongVersion) && new Set(backup.songVersions.map((version) => version.id)).size === backup.songVersions.length
+    && backup.songVersions.every((version) => isRecord(version) && backup.songProjects!.some((project) => project.id === version.songId))
+  return (backup.version === 1 || backup.version === backupVersion) && (backup.workspaceName === undefined || (typeof backup.workspaceName === 'string' && backup.workspaceName.trim().length > 0 && backup.workspaceName.length <= 80))
     && (backup.labelAgreement === undefined || validLabel(backup.labelAgreement))
     && Array.isArray(backup.concerts) && backup.concerts.every((item) => hasId(item) && typeof item.title === 'string' && isDate(item.date) && ['en_converses', 'reservat', 'confirmat', 'realitzat', 'cancel·lat'].includes(String(item.status)) && nonNegative(item.feeAmount) && nonNegative(item.feePaid) && isRecord(item.details) && (item.details.announceable === undefined || typeof item.details.announceable === 'boolean') && Array.isArray(item.details.documents) && item.details.documents.every(validDocument) && Array.isArray(item.details.materials) && item.details.materials.every(validConcertMaterial) && (item.details.schedule === undefined || (Array.isArray(item.details.schedule) && item.details.schedule.every(validScheduleItem))) && (item.details.personIds === undefined || (Array.isArray(item.details.personIds) && item.details.personIds.every((id) => typeof id === 'string'))) && (item.details.feePaymentMethod === undefined || item.details.feePaymentMethod === 'bank' || item.details.feePaymentMethod === 'cash') && (item.details.expensePaymentMethod === undefined || item.details.expensePaymentMethod === 'bank' || item.details.expensePaymentMethod === 'cash'))
     && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string' && (item.archived === undefined || typeof item.archived === 'boolean') && (item.storagePath === undefined || typeof item.storagePath === 'string') && (item.fileName === undefined || typeof item.fileName === 'string'))
@@ -85,6 +111,7 @@ export function validateBackup(value: unknown): value is AppBackup {
     && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean'))
     && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && (item.category === undefined || typeof item.category === 'string'))
     && Array.isArray(backup.setlists) && backup.setlists.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && Array.isArray(item.songs) && item.songs.every((song) => typeof song === 'string'))
+    && (backup.version === 1 ? (backup.songProjects === undefined && backup.songVersions === undefined) || validSongData : validSongData)
 }
 
 export async function getBandName(): Promise<string> {
@@ -218,6 +245,8 @@ export function importLocalBackup(backup: AppBackup): void {
   localStorage.setItem(peopleKey, JSON.stringify(backup.people.map((item) => ({ ...item, active: item.active ?? true }))))
   localStorage.setItem(materialsKey, JSON.stringify(backup.materials.map((item) => ({ ...item, active: item.active ?? true, category: item.category || '' }))))
   localStorage.setItem(setlistsKey, JSON.stringify(backup.setlists.map((item) => ({ ...item, active: item.active ?? true }))))
+  if (backup.songProjects) localStorage.setItem(songProjectsCacheKey(), JSON.stringify(backup.songProjects))
+  if (backup.songVersions) localStorage.setItem(songVersionsCacheKey(), JSON.stringify(backup.songVersions))
   if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
   if (backup.workspaceName) localStorage.setItem(bandNameKey, backup.workspaceName)
   if (backup.labelAgreement !== undefined) localStorage.setItem(bandLabelKey, JSON.stringify(backup.labelAgreement))
@@ -228,10 +257,12 @@ export async function importBackup(backup: AppBackup): Promise<void> {
   if (offline()) throw new Error('Connecta’t a internet per importar el backup a l’espai compartit.')
 
   // Cloud imports merge/overwrite matching IDs; they never delete records missing from the file.
-  const [currentConcerts, currentSales, currentProducts, currentBandId] = await Promise.all([listConcerts(), listMerchSales(), listMerchProducts(), bandId()])
+  const [currentConcerts, currentSales, currentProducts, currentSongs, currentSongVersions, currentBandId] = await Promise.all([listConcerts(), listMerchSales(), listMerchProducts(), listSongProjects(), listSongVersions(), bandId()])
   const concertVersions = new Map(currentConcerts.map((concert) => [concert.id, concert.updatedAt]))
   const currentSaleIds = new Set(currentSales.map((sale) => sale.id))
   const currentProductIds = new Map(currentProducts.map((product) => [product.id, product.imagePath]))
+  const currentSongUpdates = new Map(currentSongs.map((song) => [song.id, song.updatedAt]))
+  const currentVersionData = new Map(currentSongVersions.map((version) => [version.id, version]))
   const ownPath = (path?: string) => path?.startsWith(`${currentBandId}/`) ? path : undefined
 
   for (const concert of backup.concerts) {
@@ -258,6 +289,11 @@ export async function importBackup(backup: AppBackup): Promise<void> {
   await Promise.all(backup.people.map((item) => saveResource('band_people', { ...item, active: item.active ?? true })))
   await Promise.all(backup.materials.map((item) => saveResource('band_materials', { ...item, active: item.active ?? true, category: item.category || '' })))
   await Promise.all(backup.setlists.map((item) => saveResource('setlist_templates', { ...item, active: item.active ?? true })))
+  for (const project of backup.songProjects || []) await saveSongProject({ ...project, updatedAt: currentSongUpdates.get(project.id) })
+  for (const version of backup.songVersions || []) {
+    const current = currentVersionData.get(version.id)
+    await saveSongVersion({ ...version, updatedAt: current?.updatedAt, audioPath: current?.audioPath, audioFileName: current?.audioFileName || version.audioFileName, audioMimeType: current?.audioMimeType || version.audioMimeType, audioSizeBytes: current?.audioSizeBytes || version.audioSizeBytes })
+  }
   for (const sale of backup.merchSales) {
     if (!currentSaleIds.has(sale.id)) await saveMerchSale({ ...sale, note: sale.note || '' })
   }
@@ -274,8 +310,8 @@ export function activeResources<T extends { active: boolean }>(items: T[]): T[] 
 interface OfflineSyncError { key: string; message: string; conflict: boolean; updatedAt: string }
 export interface OfflineSyncItem { key: string; id: string; kind: 'concert' | 'data'; entity?: OfflineDataEntity; label: string; message?: string; conflict: boolean }
 export interface OfflineSyncStatus { pending: number; failed: number; items: OfflineSyncItem[] }
-export type OfflineDataEntity = 'money' | 'product' | 'sale' | 'resource'
-interface OfflineDataOperation { id: string; entity: OfflineDataEntity; action: 'save' | 'delete'; payload: unknown; hasBase?: boolean; base?: unknown }
+export type OfflineDataEntity = 'money' | 'product' | 'sale' | 'resource' | 'song' | 'song_version'
+interface OfflineDataOperation { id: string; entity: OfflineDataEntity; action: 'save' | 'delete'; payload: unknown; hasBase?: boolean; base?: unknown; ownerId?: string }
 
 function offlineErrors(): OfflineSyncError[] { return readCache<OfflineSyncError>(offlineSyncErrorsKey) }
 function notifyOfflineQueueChange(): void { if (typeof window !== 'undefined') window.dispatchEvent(new Event('escena:offline-queue-change')) }
@@ -287,22 +323,32 @@ function setOfflineError(key: string, cause: unknown): void {
   notifyOfflineQueueChange()
 }
 
+function offlineDataOperationKey(entity: OfflineDataEntity, id: string, ownerId?: string): string {
+  return ownerId ? `${entity}:${ownerId}:${id}` : `${entity}:${id}`
+}
+
+function matchesCurrentOperation(operation: OfflineDataOperation, entity: OfflineDataEntity, id: string): boolean {
+  return operation.entity === entity && operation.id === id && ((!operation.ownerId && entity !== 'song' && entity !== 'song_version') || operation.ownerId === dataSessionOwner)
+}
+
 export function getOfflineSyncStatus(): OfflineSyncStatus {
   const items: OfflineSyncItem[] = []
   const errors = new Map(offlineErrors().map((item) => [item.key, item]))
   const queuedConcerts = readCache<Concert>(offlineQueueKey)
-  const queuedData = readCache<OfflineDataOperation>(offlineDataQueueKey)
+  const queuedData = readCache<OfflineDataOperation>(offlineDataQueueKey).filter((operation) => operation.entity === 'song' || operation.entity === 'song_version' ? operation.ownerId === dataSessionOwner : true)
   for (const concert of queuedConcerts) {
     const key = `concert:${concert.id}`
     const issue = errors.get(key)
     items.push({ key, id: concert.id, kind: 'concert', label: concert.title || 'Concert sense nom', message: issue?.message, conflict: issue?.conflict || false })
   }
   for (const operation of queuedData) {
-    const key = `${operation.entity}:${operation.id}`
+    const key = offlineDataOperationKey(operation.entity, operation.id, operation.ownerId)
     const issue = errors.get(key)
-    const entityLabels = { money: 'moviment', product: 'producte', sale: 'venda', resource: 'recurs de banda' }
+    const entityLabels = { money: 'moviment', product: 'producte', sale: 'venda', resource: 'recurs de banda', song: 'cançó', song_version: 'versió de cançó' }
     const payload = operation.entity === 'resource' ? (operation.payload as { value?: { name?: string } }).value : operation.payload
-    const label = payload && typeof payload === 'object' && 'name' in payload ? String((payload as { name: unknown }).name) : entityLabels[operation.entity]
+    const label = payload && typeof payload === 'object' && 'name' in payload
+      ? String((payload as { name: unknown }).name)
+      : payload && typeof payload === 'object' && 'title' in payload ? String((payload as { title: unknown }).title) : entityLabels[operation.entity]
     items.push({ key, id: operation.id, kind: 'data', entity: operation.entity, label, message: issue?.message, conflict: issue?.conflict || false })
   }
   return { pending: items.length, failed: items.filter((item) => item.message).length, items }
@@ -382,11 +428,12 @@ async function syncLocalMerchTotalMovement(): Promise<void> {
 function queueData(entity: OfflineDataEntity, action: 'save' | 'delete', payload: unknown, base?: unknown, hasBase = false): void {
   const queue = readCache<{ id: string; entity: string; action: string; payload: unknown }>(offlineDataQueueKey)
   const id = typeof payload === 'string' ? payload : (payload as { id: string }).id
-  const existing = queue.find((item) => item.entity === entity && item.id === id) as OfflineDataOperation | undefined
+  const ownerId = entity === 'song' || entity === 'song_version' ? dataSessionOwner : undefined
+  const existing = queue.find((item) => item.entity === entity && item.id === id && (item as OfflineDataOperation).ownerId === ownerId) as OfflineDataOperation | undefined
   const preservedBase = existing?.hasBase ? existing.base : base
   const preservedHasBase = existing?.hasBase ?? hasBase
-  writeCache(offlineDataQueueKey, [...queue.filter((item) => !(item.entity === entity && item.id === id)), { id, entity, action, payload, base: preservedBase, hasBase: preservedHasBase }])
-  clearOfflineError(`${entity}:${id}`)
+  writeCache(offlineDataQueueKey, [...queue.filter((item) => !(item.entity === entity && item.id === id && (item as OfflineDataOperation).ownerId === ownerId)), { id, entity, action, payload, base: preservedBase, hasBase: preservedHasBase, ownerId }])
+  clearOfflineError(offlineDataOperationKey(entity, id, ownerId))
   notifyOfflineQueueChange()
 }
 
@@ -394,6 +441,8 @@ function canonicalOfflineValue(entity: OfflineDataEntity, value: unknown, table?
   if (!isRecord(value)) return value ?? null
   if (entity === 'money') return { id: value.id, concertId: value.concertId || undefined, kind: value.kind, amount: Number(value.amount), date: value.date, category: value.category || '', note: value.note || '', paymentMethod: value.paymentMethod === 'cash' ? 'cash' : 'bank' }
   if (entity === 'product') return { id: value.id, name: value.name, price: Number(value.price), stock: Number(value.stock), active: value.active, sizes: value.sizes || [] }
+  if (entity === 'song') return { id: value.id, title: value.title, status: value.status, notes: value.notes || '', lyrics: value.lyrics || '', archived: Boolean(value.archived) }
+  if (entity === 'song_version') return { id: value.id, songId: value.songId, name: value.name, kind: value.kind, recordedOn: value.recordedOn, notes: value.notes || '', externalUrl: value.externalUrl || '', audioPath: value.audioPath, audioFileName: value.audioFileName, audioMimeType: value.audioMimeType, audioSizeBytes: value.audioSizeBytes }
   if (entity === 'resource') {
     const resource = value.value && isRecord(value.value) ? value.value : value
     const resourceTable = table || (typeof value.table === 'string' ? value.table as ResourceTable : undefined)
@@ -406,7 +455,7 @@ function canonicalOfflineValue(entity: OfflineDataEntity, value: unknown, table?
 
 async function ensureNoOfflineDataConflict(operation: OfflineDataOperation): Promise<void> {
   if (!supabase || !operation.hasBase || operation.entity === 'sale') return
-  const table = operation.entity === 'money' ? 'money_movements' : operation.entity === 'product' ? 'merch_products' : (operation.payload as { table?: ResourceTable }).table
+  const table = operation.entity === 'money' ? 'money_movements' : operation.entity === 'product' ? 'merch_products' : operation.entity === 'song' ? 'song_projects' : operation.entity === 'song_version' ? 'song_versions' : (operation.payload as { table?: ResourceTable }).table
   if (!table) return
   const { data, error } = await (supabase as any).from(table).select('*').eq('id', operation.id).maybeSingle() as { data: Record<string, unknown> | null; error: Error | null }
   if (error) throw error
@@ -414,24 +463,28 @@ async function ensureNoOfflineDataConflict(operation: OfflineDataOperation): Pro
   if (data) {
     if (operation.entity === 'money') remote = canonicalOfflineValue('money', { id: data.id, concertId: data.concert_id || undefined, kind: data.kind, amount: Number(data.amount), date: data.date, category: data.category, note: data.note, paymentMethod: data.payment_method })
     else if (operation.entity === 'product') remote = canonicalOfflineValue('product', fromMerchProduct(data as unknown as MerchProductRow))
+    else if (operation.entity === 'song') remote = canonicalOfflineValue('song', fromSongProjectRow(data as unknown as SongProjectRow))
+    else if (operation.entity === 'song_version') remote = canonicalOfflineValue('song_version', fromSongVersionRow(data as unknown as SongVersionRow))
     else remote = canonicalOfflineValue('resource', data, (operation.payload as { table: ResourceTable }).table)
   }
   const base = canonicalOfflineValue(operation.entity, operation.base, (operation.payload as { table?: ResourceTable }).table)
   if (JSON.stringify(remote) !== JSON.stringify(base)) {
-    const noun = operation.entity === 'money' ? 'moviment' : operation.entity === 'product' ? 'producte' : 'recurs de banda'
+    const noun = operation.entity === 'money' ? 'moviment' : operation.entity === 'product' ? 'producte' : operation.entity === 'song' ? 'cançó' : operation.entity === 'song_version' ? 'versió' : 'recurs de banda'
     throw new Error(`El ${noun} ha canviat al servidor mentre l’editaves sense connexió. Tria quina versió vols conservar.`)
   }
 }
 
 async function fetchOfflineDataVersion(operation: OfflineDataOperation): Promise<unknown | null> {
   if (!supabase) return null
-  const table = operation.entity === 'money' ? 'money_movements' : operation.entity === 'product' ? 'merch_products' : operation.entity === 'resource' ? (operation.payload as { table?: ResourceTable }).table : undefined
+  const table = operation.entity === 'money' ? 'money_movements' : operation.entity === 'product' ? 'merch_products' : operation.entity === 'song' ? 'song_projects' : operation.entity === 'song_version' ? 'song_versions' : operation.entity === 'resource' ? (operation.payload as { table?: ResourceTable }).table : undefined
   if (!table) return null
   const { data, error } = await (supabase as any).from(table).select('*').eq('id', operation.id).maybeSingle() as { data: Record<string, unknown> | null; error: Error | null }
   if (error) throw error
   if (!data) return null
   if (operation.entity === 'money') return canonicalOfflineValue('money', { id: data.id, concertId: data.concert_id || undefined, kind: data.kind, amount: Number(data.amount), date: data.date, category: data.category, note: data.note, paymentMethod: data.payment_method })
   if (operation.entity === 'product') return canonicalOfflineValue('product', fromMerchProduct(data as unknown as MerchProductRow))
+  if (operation.entity === 'song') return fromSongProjectRow(data as unknown as SongProjectRow)
+  if (operation.entity === 'song_version') return fromSongVersionRow(data as unknown as SongVersionRow)
   return canonicalOfflineValue('resource', data, (operation.payload as { table: ResourceTable }).table)
 }
 
@@ -648,21 +701,28 @@ export async function resolveOfflineConcertConflict(id: string, choice: 'local' 
 export async function resolveOfflineDataConflict(id: string, entity: Exclude<OfflineDataEntity, 'sale'>, choice: 'local' | 'server'): Promise<void> {
   if (!supabase || offline()) throw new Error('Connecta’t a internet per resoldre el conflicte.')
   const queued = readCache<OfflineDataOperation>(offlineDataQueueKey)
-  const original = queued.find((item) => item.id === id && item.entity === entity)
+  const original = queued.find((item) => matchesCurrentOperation(item, entity, id))
   if (!original) return
   const latest = await fetchOfflineDataVersion(original)
   const currentQueue = readCache<OfflineDataOperation>(offlineDataQueueKey)
-  const current = currentQueue.find((item) => item.id === id && item.entity === entity)
+  const current = currentQueue.find((item) => matchesCurrentOperation(item, entity, id))
   if (!current || JSON.stringify(current) !== JSON.stringify(original)) throw new Error('Aquest canvi offline s’ha tornat a editar. Recarrega i resol el conflicte més recent.')
 
-  const removeQueued = () => writeCache(offlineDataQueueKey, currentQueue.filter((item) => !(item.id === id && item.entity === entity)))
+  const removeQueued = () => writeCache(offlineDataQueueKey, currentQueue.filter((item) => !matchesCurrentOperation(item, entity, id)))
   if (choice === 'local' && !(original.action === 'delete' && latest === null)) {
-    const rebased = { ...original, base: latest, hasBase: true }
-    writeCache(offlineDataQueueKey, [...currentQueue.filter((item) => !(item.id === id && item.entity === entity)), rebased])
+    const payload = entity === 'song_version' && isRecord(original.payload)
+      ? { ...original.payload, updatedAt: isRecord(latest) ? latest.updatedAt : undefined, audioPath: isRecord(latest) ? latest.audioPath : undefined, audioFileName: isRecord(latest) ? latest.audioFileName : undefined, audioMimeType: isRecord(latest) ? latest.audioMimeType : undefined, audioSizeBytes: isRecord(latest) ? latest.audioSizeBytes : undefined }
+      : entity === 'song' && isRecord(original.payload)
+        ? { ...original.payload, updatedAt: isRecord(latest) ? latest.updatedAt : undefined }
+      : original.payload
+    const rebased = { ...original, payload, base: latest, hasBase: true }
+    writeCache(offlineDataQueueKey, [...currentQueue.filter((item) => !matchesCurrentOperation(item, entity, id)), rebased])
   } else {
     removeQueued()
     if (entity === 'money') writeCache(moneyKey, latest ? [...readCache<MoneyMovement>(moneyKey).filter((item) => item.id !== id), latest as MoneyMovement] : readCache<MoneyMovement>(moneyKey).filter((item) => item.id !== id))
     else if (entity === 'product') writeCache(merchProductsKey, latest ? [...readCache<MerchProduct>(merchProductsKey).filter((item) => item.id !== id), latest as MerchProduct] : readCache<MerchProduct>(merchProductsKey).filter((item) => item.id !== id))
+    else if (entity === 'song') writeCache(songProjectsCacheKey(), latest ? [...readCache<SongProject>(songProjectsCacheKey()).filter((item) => item.id !== id), latest as SongProject] : readCache<SongProject>(songProjectsCacheKey()).filter((item) => item.id !== id))
+    else if (entity === 'song_version') writeCache(songVersionsCacheKey(), latest ? [...readCache<SongVersion>(songVersionsCacheKey()).filter((item) => item.id !== id), latest as SongVersion] : readCache<SongVersion>(songVersionsCacheKey()).filter((item) => item.id !== id))
     else {
       const table = (original.payload as { table: ResourceTable }).table
       const cacheKey = resourceKeys[table]
@@ -670,15 +730,15 @@ export async function resolveOfflineDataConflict(id: string, entity: Exclude<Off
       writeCache(cacheKey, latest ? [...resources, latest as Resource] : resources)
     }
   }
-  clearOfflineError(`${entity}:${id}`)
+  clearOfflineError(offlineDataOperationKey(entity, id, original.ownerId))
   notifyOfflineQueueChange()
 }
 
 export async function discardOfflineDataChange(id: string, entity: OfflineDataEntity): Promise<void> {
   const queue = readCache<OfflineDataOperation>(offlineDataQueueKey)
-  const operation = queue.find((item) => item.id === id && item.entity === entity)
+  const operation = queue.find((item) => matchesCurrentOperation(item, entity, id))
   if (!operation) return
-  const remaining = queue.filter((item) => !(item.id === id && item.entity === entity))
+  const remaining = queue.filter((item) => !matchesCurrentOperation(item, entity, id))
   const restore = <T extends { id: string }>(key: string, value: T | undefined) => {
     const current = readCache<T>(key).filter((item) => item.id !== id)
     writeCache(key, value ? [...current, value] : current)
@@ -686,6 +746,8 @@ export async function discardOfflineDataChange(id: string, entity: OfflineDataEn
   if (entity === 'money') restore(moneyKey, operation.base as MoneyMovement | null || undefined)
   else if (entity === 'product') restore(merchProductsKey, operation.base as MerchProduct | null || undefined)
   else if (entity === 'sale') restore(merchSalesKey, operation.base as MerchSale | null || undefined)
+  else if (entity === 'song') restore(songProjectsCacheKey(), operation.base as SongProject | null || undefined)
+  else if (entity === 'song_version') restore(songVersionsCacheKey(), operation.base as SongVersion | null || undefined)
   else {
     const table = (operation.payload as { table: ResourceTable }).table
     restore(resourceKeys[table], operation.base as Resource | null || undefined)
@@ -698,16 +760,17 @@ export async function discardOfflineDataChange(id: string, entity: OfflineDataEn
     else await syncLocalMerchTotalMovement()
   }
   writeCache(offlineDataQueueKey, remaining)
-  clearOfflineError(`${entity}:${id}`)
+  clearOfflineError(offlineDataOperationKey(entity, id, operation.ownerId))
   notifyOfflineQueueChange()
 }
 
 export async function syncOfflineData(): Promise<number> {
   if (!supabase || offline()) return 0
-  const queue = readCache<{ id: string; entity: 'money' | 'product' | 'sale' | 'resource'; action: 'save' | 'delete'; payload: unknown }>(offlineDataQueueKey)
+  const queue = readCache<OfflineDataOperation>(offlineDataQueueKey)
   const remaining = [...queue]
   let synced = 0
   for (const operation of queue) {
+    if ((operation.entity === 'song' || operation.entity === 'song_version') && operation.ownerId !== dataSessionOwner) continue
     try {
       await ensureNoOfflineDataConflict(operation)
       if (operation.entity === 'money') {
@@ -718,6 +781,13 @@ export async function syncOfflineData(): Promise<number> {
         const resource = operation.payload as { table: ResourceTable; value: Resource }
         await saveResource(resource.table, resource.value)
       }
+      else if (operation.entity === 'song') {
+        if (operation.action === 'save') await saveSongProject(operation.payload as SongProject)
+      }
+      else if (operation.entity === 'song_version') {
+        if (operation.action === 'save') await saveSongVersion(operation.payload as SongVersion)
+        else await deleteSongVersion(operation.payload as SongVersion)
+      }
       else if (operation.entity === 'sale') {
         if (operation.action === 'save') await saveMerchSale(operation.payload as MerchSale)
         else await deleteMerchSale(operation.id)
@@ -725,19 +795,19 @@ export async function syncOfflineData(): Promise<number> {
       const index = remaining.findIndex((item) => item.id === operation.id && item.entity === operation.entity)
       if (index >= 0) remaining.splice(index, 1)
       synced += 1
-      clearOfflineError(`${operation.entity}:${operation.id}`)
+      clearOfflineError(offlineDataOperationKey(operation.entity, operation.id, operation.ownerId))
     } catch (cause) {
-      const latest = readCache<typeof queue[number]>(offlineDataQueueKey).find((item) => item.id === operation.id && item.entity === operation.entity)
-      if (latest && JSON.stringify(latest) === JSON.stringify(operation)) setOfflineError(`${operation.entity}:${operation.id}`, cause)
+      const latest = readCache<typeof queue[number]>(offlineDataQueueKey).find((item) => item.id === operation.id && item.entity === operation.entity && item.ownerId === operation.ownerId)
+      if (latest && JSON.stringify(latest) === JSON.stringify(operation)) setOfflineError(offlineDataOperationKey(operation.entity, operation.id, operation.ownerId), cause)
       /* Keep the latest version visible for retry. */
     }
   }
   const latest = readCache<typeof queue[number]>(offlineDataQueueKey)
-  const failedKeys = new Set(remaining.map((item) => `${item.entity}:${item.id}`))
+  const failedKeys = new Set(remaining.map((item) => offlineDataOperationKey(item.entity, item.id, item.ownerId)))
   writeCache(offlineDataQueueKey, latest.filter((item) => {
-    const key = `${item.entity}:${item.id}`
+    const key = offlineDataOperationKey(item.entity, item.id, item.ownerId)
     if (failedKeys.has(key)) return true
-    const beforeSync = queue.find((operation) => `${operation.entity}:${operation.id}` === key)
+    const beforeSync = queue.find((operation) => offlineDataOperationKey(operation.entity, operation.id, operation.ownerId) === key)
     return !beforeSync || JSON.stringify(beforeSync) !== JSON.stringify(item)
   }))
   notifyOfflineQueueChange()
@@ -871,6 +941,212 @@ export async function uploadBandDocument(document: BandDocument, file: File): Pr
   if (uploadError) throw storageErrorMessage(uploadError)
   try { return await saveBandDocument({ ...document, storagePath: path, fileName: file.name }) }
   catch (error) { await removeConcertDocumentFile(path).catch(() => {}); throw error }
+}
+
+interface SongProjectRow {
+  id: string
+  title: string
+  status: SongProject['status']
+  notes: string
+  lyrics: string
+  archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface SongVersionRow {
+  id: string
+  song_project_id: string
+  name: string
+  kind: SongVersion['kind']
+  recorded_on: string
+  notes: string
+  external_url: string
+  audio_path: string | null
+  audio_file_name: string | null
+  audio_mime_type: string | null
+  audio_size_bytes: number | null
+  created_at: string
+  updated_at: string
+}
+
+function fromSongProjectRow(row: SongProjectRow): SongProject {
+  return { id: row.id, title: row.title, status: row.status, notes: row.notes, lyrics: row.lyrics, archived: row.archived, createdAt: row.created_at, updatedAt: row.updated_at }
+}
+
+function fromSongVersionRow(row: SongVersionRow): SongVersion {
+  return { id: row.id, songId: row.song_project_id, name: row.name, kind: row.kind, recordedOn: row.recorded_on, notes: row.notes, externalUrl: row.external_url, audioPath: row.audio_path || undefined, audioFileName: row.audio_file_name || undefined, audioMimeType: row.audio_mime_type || undefined, audioSizeBytes: row.audio_size_bytes === null ? undefined : Number(row.audio_size_bytes), createdAt: row.created_at, updatedAt: row.updated_at }
+}
+
+function validateExternalUrl(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error()
+    return parsed.href
+  } catch { throw new Error('L’enllaç de la versió ha de començar per http:// o https://.') }
+}
+
+export async function listSongProjects(): Promise<SongProject[]> {
+  const cacheKey = songProjectsCacheKey()
+  if (!supabase || offline()) return readCache<SongProject>(cacheKey)
+  const { data, error } = await supabase.from('song_projects').select('*').order('updated_at', { ascending: false })
+  if (error) throw error
+  const projects = (data as SongProjectRow[]).map(fromSongProjectRow)
+  writeCache(cacheKey, projects)
+  return projects
+}
+
+export async function saveSongProject(project: SongProject): Promise<SongProject> {
+  const title = project.title.trim().replace(/\s+/g, ' ')
+  if (!title) throw new Error('Escriu el títol de la cançó.')
+  if (title.length > 200) throw new Error('El títol no pot superar els 200 caràcters.')
+  const clean = { ...project, title, notes: project.notes.trim(), lyrics: project.lyrics.trim() }
+  const cacheKey = songProjectsCacheKey()
+  const current = readCache<SongProject>(cacheKey)
+  const previous = current.find((item) => item.id === project.id) ?? null
+  if (!supabase) {
+    const now = new Date().toISOString()
+    const saved = { ...clean, createdAt: clean.createdAt || now, updatedAt: now }
+    writeCache(cacheKey, [saved, ...current.filter((item) => item.id !== saved.id)])
+    return saved
+  }
+  if (offline()) {
+    const saved = { ...clean, createdAt: clean.createdAt || new Date().toISOString() }
+    writeCache(cacheKey, [saved, ...current.filter((item) => item.id !== saved.id)])
+    queueData('song', 'save', saved, previous, true)
+    return saved
+  }
+  const values = { title, status: clean.status, notes: clean.notes, lyrics: clean.lyrics, archived: clean.archived }
+  const query = clean.updatedAt
+    ? supabase.from('song_projects').update(values).eq('id', clean.id).eq('updated_at', clean.updatedAt)
+    : supabase.from('song_projects').insert({ id: clean.id, band_id: await bandId(), ...values })
+  const { data, error } = await query.select('*').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Aquesta cançó ha canviat en un altre dispositiu. Reobre-la abans de desar.')
+  const saved = fromSongProjectRow(data as SongProjectRow)
+  writeCache(cacheKey, [saved, ...current.filter((item) => item.id !== saved.id)])
+  return saved
+}
+
+export async function listSongVersions(songId?: string): Promise<SongVersion[]> {
+  const cacheKey = songVersionsCacheKey()
+  if (!supabase || offline()) {
+    const versions = readCache<SongVersion>(cacheKey)
+    return songId ? versions.filter((version) => version.songId === songId) : versions
+  }
+  let query = supabase.from('song_versions').select('*').order('recorded_on', { ascending: false }).order('created_at', { ascending: false })
+  if (songId) query = query.eq('song_project_id', songId)
+  const { data, error } = await query
+  if (error) throw error
+  const versions = (data as SongVersionRow[]).map(fromSongVersionRow)
+  if (songId) {
+    const other = readCache<SongVersion>(cacheKey).filter((version) => version.songId !== songId)
+    writeCache(cacheKey, [...versions, ...other])
+  } else writeCache(cacheKey, versions)
+  return versions
+}
+
+export async function saveSongVersion(version: SongVersion): Promise<SongVersion> {
+  const name = version.name.trim().replace(/\s+/g, ' ')
+  if (!name) throw new Error('Escriu el nom de la versió.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(version.recordedOn)) throw new Error('Indica una data vàlida per a la versió.')
+  const clean = { ...version, name, notes: version.notes.trim(), externalUrl: validateExternalUrl(version.externalUrl) }
+  const cacheKey = songVersionsCacheKey()
+  const current = readCache<SongVersion>(cacheKey)
+  const previous = current.find((item) => item.id === version.id) ?? null
+  if (!supabase) {
+    const now = new Date().toISOString()
+    const saved = { ...clean, createdAt: clean.createdAt || now, updatedAt: now }
+    writeCache(cacheKey, [saved, ...current.filter((item) => item.id !== saved.id)])
+    return saved
+  }
+  if (offline()) {
+    const saved = { ...clean, createdAt: clean.createdAt || new Date().toISOString() }
+    writeCache(cacheKey, [saved, ...current.filter((item) => item.id !== saved.id)])
+    queueData('song_version', 'save', saved, previous, true)
+    return saved
+  }
+  const values = { name, kind: clean.kind, recorded_on: clean.recordedOn, notes: clean.notes, external_url: clean.externalUrl, audio_path: clean.audioPath ?? null, audio_file_name: clean.audioFileName ?? null, audio_mime_type: clean.audioMimeType ?? null, audio_size_bytes: clean.audioSizeBytes ?? null }
+  const query = clean.updatedAt
+    ? supabase.from('song_versions').update(values).eq('id', clean.id).eq('updated_at', clean.updatedAt)
+    : supabase.from('song_versions').insert({ id: clean.id, band_id: await bandId(), song_project_id: clean.songId, ...values })
+  const { data, error } = await query.select('*').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Aquesta versió ha canviat en un altre dispositiu. Reobre-la abans de desar.')
+  const saved = fromSongVersionRow(data as SongVersionRow)
+  writeCache(cacheKey, [saved, ...current.filter((item) => item.id !== saved.id)])
+  return saved
+}
+
+export async function uploadSongVersionAudio(version: SongVersion, file: File): Promise<SongVersion> {
+  if (!supabase) throw new Error('La pujada d’àudio només està disponible amb Supabase.')
+  if (offline()) throw new Error('Connecta’t a internet per pujar un àudio.')
+  const allowed = ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav']
+  if (!allowed.includes(file.type)) throw new Error('Fes servir un fitxer MP3, M4A o WAV.')
+  if (file.size > maxSongFileBytes) throw new Error('L’àudio no pot superar els 50 MB.')
+  if (!version.updatedAt) throw new Error('Desa la versió abans de pujar-hi l’àudio.')
+  const currentBandId = await bandId()
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-90) || 'audio'
+  const path = `${currentBandId}/${version.songId}/${version.id}/${crypto.randomUUID()}-${safeName}`
+  const { error: uploadError } = await supabase.storage.from(songFileBucket).upload(path, file, { upsert: false, contentType: file.type })
+  if (uploadError) throw storageErrorMessage(uploadError)
+  try {
+    const saved = await saveSongVersion({ ...version, audioPath: path, audioFileName: file.name, audioMimeType: file.type, audioSizeBytes: file.size })
+    if (version.audioPath && isSongOwnedFile(version, version.audioPath)) void supabase.storage.from(songFileBucket).remove([version.audioPath])
+    return saved
+  } catch (error) {
+    await supabase.storage.from(songFileBucket).remove([path]).catch(() => {})
+    throw error
+  }
+}
+
+export async function removeSongVersionAudio(version: SongVersion): Promise<SongVersion> {
+  if (!version.audioPath) return version
+  if (!supabase || offline()) throw new Error('Connecta’t a internet per treure l’àudio.')
+  const path = version.audioPath
+  const saved = await saveSongVersion({ ...version, audioPath: undefined, audioFileName: undefined, audioMimeType: undefined, audioSizeBytes: undefined })
+  if (isSongOwnedFile(version, path)) void supabase.storage.from(songFileBucket).remove([path])
+  return saved
+}
+
+export async function deleteSongVersion(version: SongVersion): Promise<void> {
+  const cacheKey = songVersionsCacheKey()
+  const all = readCache<SongVersion>(cacheKey)
+  if (!supabase) { writeCache(cacheKey, all.filter((item) => item.id !== version.id)); return }
+  if (offline()) {
+    if (version.audioPath) throw new Error('Connecta’t a internet per eliminar una versió amb àudio.')
+    writeCache(cacheKey, all.filter((item) => item.id !== version.id))
+    const queue = readCache<OfflineDataOperation>(offlineDataQueueKey)
+    const pendingCreation = queue.find((operation) => matchesCurrentOperation(operation, 'song_version', version.id) && operation.action === 'save' && operation.hasBase && operation.base === null)
+    if (pendingCreation) {
+      writeCache(offlineDataQueueKey, queue.filter((operation) => operation !== pendingCreation))
+      clearOfflineError(offlineDataOperationKey('song_version', version.id, pendingCreation.ownerId))
+      notifyOfflineQueueChange()
+      return
+    }
+    queueData('song_version', 'delete', version, version, true)
+    return
+  }
+  const query = supabase.from('song_versions').delete().eq('id', version.id)
+  const { data, error } = await (version.updatedAt ? query.eq('updated_at', version.updatedAt) : query).select('id').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Aquesta versió ha canviat o ja no existeix. Recarrega la cançó.')
+  writeCache(cacheKey, all.filter((item) => item.id !== version.id))
+  if (version.audioPath && isSongOwnedFile(version, version.audioPath)) void supabase.storage.from(songFileBucket).remove([version.audioPath])
+}
+
+export function isSongOwnedFile(version: SongVersion, path: string): boolean {
+  const parts = path.split('/')
+  return parts[1] === version.songId && parts[2] === version.id
+}
+
+export async function signedSongAudioUrl(path: string): Promise<string> {
+  if (!supabase) throw new Error('Aquest àudio no està disponible en mode demostració.')
+  const { data, error } = await supabase.storage.from(songFileBucket).createSignedUrl(path, 60 * 60)
+  if (error) throw storageErrorMessage(error)
+  return data.signedUrl
 }
 
 interface MoneyRow { id: string; concert_id: string | null; kind: MoneyMovement['kind']; amount: number; date: string; category: string; note: string; payment_method?: MoneyMovement['paymentMethod']; source_type?: MoneyMovement['sourceType'] | null; source_id?: string | null }

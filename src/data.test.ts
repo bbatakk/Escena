@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { activeResources, backupVersion, isConcertOwnedFile, validateBackup } from './data'
-import { newConcert } from './model'
+import { activeResources, backupVersion, isConcertOwnedFile, isSongOwnedFile, validateBackup } from './data'
+import { newConcert, type SongVersion } from './model'
 
 describe('propietat dels fitxers d’un concert', () => {
   it('no elimina fitxers compartits de la biblioteca quan es treuen d’un concert', () => {
@@ -12,8 +12,17 @@ describe('propietat dels fitxers d’un concert', () => {
   })
 })
 
+describe('propietat dels àudios de cançons', () => {
+  it('només reconeix la ruta de la cançó i versió corresponents', () => {
+    const version: SongVersion = { id: 'version-1', songId: 'song-1', name: 'Demo', kind: 'demo', recordedOn: '2026-09-29', notes: '', externalUrl: '' }
+    expect(isSongOwnedFile(version, 'band/song-1/version-1/demo.mp3')).toBe(true)
+    expect(isSongOwnedFile(version, 'band/song-2/version-1/demo.mp3')).toBe(false)
+    expect(isSongOwnedFile(version, 'band/song-1/version-2/demo.mp3')).toBe(false)
+  })
+})
+
 describe('validació de backups', () => {
-  const emptyBackup = { version: backupVersion, exportedAt: '2026-09-24T10:00:00.000Z', concerts: [], library: [], money: [], merchProducts: [], merchSales: [], people: [], materials: [], setlists: [] }
+  const emptyBackup = { version: backupVersion, exportedAt: '2026-09-24T10:00:00.000Z', concerts: [], library: [], money: [], merchProducts: [], merchSales: [], people: [], materials: [], setlists: [], songProjects: [], songVersions: [] }
 
   it('accepta l’estructura buida vàlida de la versió actual', () => {
     expect(validateBackup(emptyBackup)).toBe(true)
@@ -24,6 +33,18 @@ describe('validació de backups', () => {
     expect(validateBackup({ ...emptyBackup, merchSales: [{ id: 'sale' }] })).toBe(false)
     expect(validateBackup({ ...emptyBackup, money: [{ id: 'movement', kind: 'ingres', amount: -1, date: '2026-09-24' }] })).toBe(false)
     expect(validateBackup({ ...emptyBackup, merchProducts: [{ id: 'product', name: 'Samarreta', price: 10, stock: 3, sizes: [{ name: 'M', stock: -1 }] }] })).toBe(false)
+  })
+
+  it('accepta backups v1 sense cançons i valida els projectes i versions de v2', () => {
+    const { songProjects: _projects, songVersions: _versions, ...versionOne } = emptyBackup
+    expect(validateBackup({ ...versionOne, version: 1 })).toBe(true)
+    const project = { id: 'song', title: 'Títol provisional', status: 'en_proces', notes: '', lyrics: 'Primera estrofa', archived: false }
+    const version = { id: 'version', songId: 'song', name: 'Demo 1', kind: 'demo', recordedOn: '2026-09-29', notes: '', externalUrl: '' }
+    expect(validateBackup({ ...emptyBackup, songProjects: [project], songVersions: [version] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, songProjects: [{ ...project, status: 'publicada' }] })).toBe(false)
+    expect(validateBackup({ ...emptyBackup, songVersions: [{ ...version, audioPath: 'band/song/version/file.mp3' }] })).toBe(false)
+    expect(validateBackup({ ...emptyBackup, songProjects: [project], songVersions: [{ ...version, songId: 'missing' }] })).toBe(false)
+    expect(validateBackup({ ...emptyBackup, songProjects: [project], songVersions: [{ ...version, externalUrl: 'javascript:alert(1)' }] })).toBe(false)
   })
 
   it('valida l’estructura dels concerts abans de mostrar-ne la previsualització', () => {
