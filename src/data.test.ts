@@ -73,6 +73,13 @@ describe('validació de backups', () => {
     expect(validateBackup({ ...emptyBackup, money: [{ ...movement, paymentMethod: 'card' }] })).toBe(false)
   })
 
+  it('valida la forma de pagament de les vendes de marxandatge', () => {
+    const sale = { id: 'sale', concertId: 'concert', productId: 'product', quantity: 1, unitPrice: 10 }
+    expect(validateBackup({ ...emptyBackup, merchSales: [{ ...sale, paymentMethod: 'card' }] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, merchSales: [{ ...sale, paymentMethod: 'cash' }] })).toBe(true)
+    expect(validateBackup({ ...emptyBackup, merchSales: [{ ...sale, paymentMethod: 'transfer' }] })).toBe(false)
+  })
+
   it('accepta imatges optimitzades del catàleg als backups locals i rebutja URL externes com a imatge', () => {
     const product = { id: 'shirt', name: 'Samarreta', price: 20, stock: 4, active: true }
     expect(validateBackup({ ...emptyBackup, merchProducts: [{ ...product, imageDataUrl: 'data:image/webp;base64,UklGRg==' }] })).toBe(true)

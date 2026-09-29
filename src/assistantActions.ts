@@ -19,7 +19,7 @@ export interface AppAction { section: Section; mode: Mode; id?: string; before?:
 export const sectionFields: Record<Section, readonly string[]> = {
   people: ['name', 'kind', 'phone', 'email'], materials: ['name', 'category'], setlists: ['name', 'songs'], documents: ['name', 'url'],
   money: ['kind', 'amount', 'date', 'category', 'note', 'concertId', 'paymentMethod'], products: ['name', 'price', 'stock', 'sizes'],
-  sales: ['concertId', 'productId', 'quantity', 'size', 'note'], workspace: ['name'], theme: ['theme'],
+  sales: ['concertId', 'productId', 'quantity', 'size', 'note', 'paymentMethod'], workspace: ['name'], theme: ['theme'],
 }
 const allowedModes: Record<Section, readonly Mode[]> = {
   people: ['create', 'update', 'archive'], materials: ['create', 'update', 'archive'], setlists: ['create', 'update', 'archive'], documents: ['create', 'update', 'archive', 'delete'],
@@ -27,7 +27,7 @@ const allowedModes: Record<Section, readonly Mode[]> = {
 }
 export const sectionLabels: Record<Section, string> = { people: 'Persones', materials: 'Material', setlists: 'Setlists', documents: 'Documents', money: 'Tresoreria', products: 'Marxandatge', sales: 'Venda de marxandatge', workspace: 'Nom de la banda', theme: 'Tema visual' }
 export const modeLabels: Record<Mode, string> = { create: 'Crear', update: 'Editar', archive: 'Arxivar', delete: 'Eliminar' }
-export const actionFieldLabels: Record<string, string> = { name: 'Nom', kind: 'Tipus', phone: 'Telèfon', email: 'Correu', category: 'Categoria', songs: 'Cançons', url: 'Enllaç', amount: 'Import', date: 'Data', note: 'Nota', concertId: 'Concert', paymentMethod: 'Compte bancari o efectiu', price: 'Preu', stock: 'Estoc', sizes: 'Talles', productId: 'Producte', quantity: 'Unitats', size: 'Talla', theme: 'Tema' }
+export const actionFieldLabels: Record<string, string> = { name: 'Nom', kind: 'Tipus', phone: 'Telèfon', email: 'Correu', category: 'Categoria', songs: 'Cançons', url: 'Enllaç', amount: 'Import', date: 'Data', note: 'Nota', concertId: 'Concert', paymentMethod: 'Forma de pagament', price: 'Preu', stock: 'Estoc', sizes: 'Talles', productId: 'Producte', quantity: 'Unitats', size: 'Talla', theme: 'Tema' }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const str = (value: unknown, max = 200): value is string => typeof value === 'string' && value.length <= max
@@ -63,7 +63,7 @@ function validate(section: Section, fields: Record<string, unknown>, context: Ac
     if (variants.length && !old?.sizes?.length && pastSales.some((sale) => !sale.size)) throw new Error('Un producte amb vendes sense talla no es pot convertir en variants.')
     if (variants.length ? pastSales.some((sale) => !sale.size || !variants.some((variant) => variant.name === sale.size && variant.stock >= pastSales.filter((entry) => entry.size === variant.name).reduce((sum, entry) => sum + entry.quantity, 0))) : (fields.stock as number) < pastSales.reduce((sum, sale) => sum + sale.quantity, 0)) throw new Error('L’estoc no pot ser inferior a les vendes registrades.')
   } else if (section === 'sales') {
-    if (!context.concerts.some((item) => item.id === fields.concertId) || !context.products.some((item) => item.id === fields.productId && item.active) || !Number.isInteger(fields.quantity) || (fields.quantity as number) < 1 || (fields.quantity as number) > 100 || !str(fields.size, 80) || !str(fields.note, 500)) throw new Error('Cal un concert i un producte actiu, amb una quantitat vàlida.')
+    if (!context.concerts.some((item) => item.id === fields.concertId) || !context.products.some((item) => item.id === fields.productId && item.active) || !Number.isInteger(fields.quantity) || (fields.quantity as number) < 1 || (fields.quantity as number) > 100 || !str(fields.size, 80) || !str(fields.note, 500) || !['card', 'cash'].includes(String(fields.paymentMethod))) throw new Error('Cal un concert i un producte actiu, amb una quantitat i forma de pagament vàlides.')
     const product = context.products.find((item) => item.id === fields.productId)!
     if ((product.sizes?.length && !product.sizes.some((size) => size.name === fields.size)) || (!product.sizes?.length && fields.size)) throw new Error('Tria una talla existent o deixa-la buida si no hi ha talles.')
     const sold = context.sales.filter((item) => item.productId === product.id && (!product.sizes?.length || item.size === fields.size)).reduce((sum, item) => sum + item.quantity, 0)
@@ -98,7 +98,7 @@ export function parseAppActions(value: unknown, context: ActionContext): AppActi
     const defaults: Record<Section, Record<string, unknown>> = {
       people: { name: '', kind: '', phone: '', email: '' }, materials: { name: '', category: '' }, setlists: { name: '', songs: [] }, documents: { name: '', url: '' },
       money: { kind: '', amount: 0, date: '', category: '', note: '', concertId: '', paymentMethod: 'bank' }, products: { name: '', price: undefined, stock: undefined, sizes: [] },
-      sales: { concertId: '', productId: '', quantity: 0, size: '', note: '' }, workspace: { name: '' }, theme: { theme: '' },
+      sales: { concertId: '', productId: '', quantity: 0, size: '', note: '', paymentMethod: 'card' }, workspace: { name: '' }, theme: { theme: '' },
     }
     const fields = raw.fields as Record<string, unknown>
     const after: Record<string, unknown> = { ...(section === 'money' ? { paymentMethod: 'bank' } : {}), ...(original || defaults[section]), ...fields }

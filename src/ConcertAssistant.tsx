@@ -296,7 +296,7 @@ async function applyAppAction(action: AppAction, context: ActionContext, onWorks
     else {
       const product = context.products.find((item) => item.id === next.productId)
       if (!product) throw new Error('El producte no existeix.')
-      await saveMerchSale({ id, concertId: next.concertId as string, productId: product.id, quantity: next.quantity as number, unitPrice: product.price, size: next.size as string || undefined, note: next.note as string })
+      await saveMerchSale({ id, concertId: next.concertId as string, productId: product.id, quantity: next.quantity as number, unitPrice: product.price, size: next.size as string || undefined, note: next.note as string, paymentMethod: next.paymentMethod === 'cash' ? 'cash' : 'card' })
     }
   }
 }
@@ -329,7 +329,7 @@ export default function ConcertAssistant({ concerts, workspaceName, workspaceLog
          materials: materials.map(({ id, name, category, active }) => ({ id, name, category, active })),
          documents: documents.map(({ id, name, url, archived, fileName }) => ({ id, name, url, archived, fileName })),
          products: products.map(({ id, name, price, stock, sizes, active }) => ({ id, name, price, stock, sizes, active })),
-         sales: sales.slice(0, 300).map(({ id, concertId, productId, quantity, unitPrice, size }) => ({ id, concertId, productId, quantity, unitPrice, size })),
+         sales: sales.slice(0, 300).map(({ id, concertId, productId, quantity, unitPrice, size, paymentMethod }) => ({ id, concertId, productId, quantity, unitPrice, size, paymentMethod: paymentMethod || 'card' })),
          workspaceName, theme: catalog.theme, analytics: assistantAnalytics(concerts, labelAgreement, sales, displayedMoney),
        })
       setLinkedCounts(new Map(concerts.map((concert) => [concert.id, sales.filter((sale) => sale.concertId === concert.id).length + movements.filter((movement) => movement.concertId === concert.id).length])))

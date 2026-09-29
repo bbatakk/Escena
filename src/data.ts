@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { concertSettlement, createId, merchRevenueByConcert, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, type SongProject, type SongShare, type SongVersion, emptyDetails, validateLabelAgreement } from './model'
+import { concertSettlement, createId, generatedTreasuryMovements, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, type SongProject, type SongShare, type SongVersion, emptyDetails, validateLabelAgreement } from './model'
 import { createSongShareToken, hashSongShareToken } from './songShares'
 
 const url = import.meta.env.VITE_SUPABASE_URL
@@ -109,7 +109,7 @@ export function validateBackup(value: unknown): value is AppBackup {
     && Array.isArray(backup.library) && backup.library.every((item) => hasId(item) && typeof item.name === 'string' && typeof item.url === 'string' && (item.archived === undefined || typeof item.archived === 'boolean') && (item.storagePath === undefined || typeof item.storagePath === 'string') && (item.fileName === undefined || typeof item.fileName === 'string'))
     && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && nonNegative(item.amount) && isDate(item.date) && (item.category === undefined || typeof item.category === 'string') && (item.note === undefined || typeof item.note === 'string') && (item.concertId === undefined || typeof item.concertId === 'string') && (item.paymentMethod === undefined || item.paymentMethod === 'bank' || item.paymentMethod === 'cash'))
     && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && nonNegative(item.price) && Number.isSafeInteger(item.stock) && nonNegative(item.stock) && (item.active === undefined || typeof item.active === 'boolean') && item.imageUrl === undefined && (item.imageDataUrl === undefined || (typeof item.imageDataUrl === 'string' && /^data:image\/(?:webp|png|jpeg);base64,/.test(item.imageDataUrl) && item.imageDataUrl.length <= 7 * 1024 * 1024)) && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && Number.isSafeInteger(size.stock) && nonNegative(size.stock)))))
-    && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && nonNegative(item.unitPrice) && (item.note === undefined || typeof item.note === 'string') && (item.size === undefined || typeof item.size === 'string'))
+    && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && nonNegative(item.unitPrice) && (item.note === undefined || typeof item.note === 'string') && (item.size === undefined || typeof item.size === 'string') && (item.paymentMethod === undefined || item.paymentMethod === 'card' || item.paymentMethod === 'cash'))
     && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean'))
     && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && (item.category === undefined || typeof item.category === 'string'))
     && Array.isArray(backup.setlists) && backup.setlists.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && Array.isArray(item.songs) && item.songs.every((song) => typeof song === 'string'))
@@ -411,18 +411,15 @@ async function syncLocalConcertExpenseById(id?: string): Promise<void> {
 
 async function syncLocalMerchTotalMovement(): Promise<void> {
   const [concerts, sales] = await Promise.all([listConcerts(), listMerchSales()])
-  const revenueByConcert = merchRevenueByConcert(concerts, sales)
-  const activeConcertIds = new Set(revenueByConcert.keys())
-  for (const movement of readCache<MoneyMovement>(moneyKey).filter((item) => item.sourceType === 'merch_total' && item.sourceId && !activeConcertIds.has(item.sourceId))) {
-    writeLocalGeneratedMovement('merch_total', movement.sourceId!, null)
+  const generated = generatedTreasuryMovements(concerts, getCachedBandLabel(), sales, localToday()).filter((item) => item.sourceType === 'merch_sale' || item.sourceType === 'legacy_merch')
+  const activeSources = new Set(generated.map((item) => `${item.sourceType}:${item.sourceId}`))
+  for (const movement of readCache<MoneyMovement>(moneyKey).filter((item) => (item.sourceType === 'merch_sale' || item.sourceType === 'legacy_merch' || item.sourceType === 'merch_total') && (!item.sourceId || !activeSources.has(`${item.sourceType}:${item.sourceId}`)))) {
+    if (movement.sourceType && movement.sourceId) writeLocalGeneratedMovement(movement.sourceType, movement.sourceId, null)
   }
-  for (const [concertId, amount] of revenueByConcert) {
-    if (amount <= 0) { writeLocalGeneratedMovement('merch_total', concertId, null); continue }
-    const concert = concerts.find((item) => item.id === concertId)
-    const concertSales = sales.filter((sale) => sale.concertId === concertId)
-    writeLocalGeneratedMovement('merch_total', concertId, {
-      concertId, kind: 'ingres', amount, date: localToday(), category: 'Marxandatge',
-      note: `Generat automàticament · ${concertSales.length ? `${concertSales.reduce((sum, sale) => sum + sale.quantity, 0)} unitats venudes` : 'Resum antic'} · ${concert?.title || 'Concert'}`,
+  for (const movement of generated) {
+    writeLocalGeneratedMovement(movement.sourceType!, movement.sourceId!, {
+      concertId: movement.concertId, kind: movement.kind, amount: movement.amount, paymentMethod: movement.paymentMethod,
+      date: movement.date, category: movement.category, note: movement.note,
     })
   }
 }
@@ -1273,9 +1270,9 @@ export async function deleteMoneyMovement(id: string): Promise<void> {
 }
 
 interface MerchProductRow { id: string; name: string; price: number; stock: number; active: boolean; sizes?: MerchProduct['sizes'] | null; image_path?: string | null }
-interface MerchSaleRow { id: string; concert_id: string; product_id: string; quantity: number; unit_price: number; note: string; size?: string | null; created_at?: string }
+interface MerchSaleRow { id: string; concert_id: string; product_id: string; quantity: number; unit_price: number; note: string; size?: string | null; payment_method?: MerchSale['paymentMethod'] | null; created_at?: string }
 function fromMerchProduct(row: MerchProductRow): MerchProduct { return { id: row.id, name: row.name, price: Number(row.price), stock: Number(row.stock), active: row.active, sizes: row.sizes || [], imagePath: row.image_path || undefined } }
-function fromMerchSale(row: MerchSaleRow): MerchSale { return { id: row.id, concertId: row.concert_id, productId: row.product_id, quantity: Number(row.quantity), unitPrice: Number(row.unit_price), note: row.note, size: row.size || undefined, createdAt: row.created_at } }
+function fromMerchSale(row: MerchSaleRow): MerchSale { return { id: row.id, concertId: row.concert_id, productId: row.product_id, quantity: Number(row.quantity), unitPrice: Number(row.unit_price), note: row.note, size: row.size || undefined, paymentMethod: row.payment_method === 'cash' ? 'cash' : 'card', createdAt: row.created_at } }
 
 export async function listMerchProducts(): Promise<MerchProduct[]> {
   if (!supabase || offline()) return readCache<MerchProduct>(merchProductsKey)
@@ -1356,7 +1353,7 @@ export async function listMerchSales(): Promise<MerchSale[]> {
 export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
   if (!supabase) { const all = await listMerchSales(); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; localStorage.setItem(merchSalesKey, JSON.stringify([saved, ...all.filter((item) => item.id !== saved.id)])); await syncLocalMerchTotalMovement(); return saved }
   if (offline()) { const all = readCache<MerchSale>(merchSalesKey); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); queueData('sale', 'save', saved); await syncLocalMerchTotalMovement(); return saved }
-  const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim(), size: sale.size || null }).select('*').single()
+  const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim(), size: sale.size || null, payment_method: sale.paymentMethod === 'cash' ? 'cash' : 'card' }).select('*').single()
   if (error) {
     // An insert may have reached Postgres even when the client lost the response. Reuse its UUID as an idempotency key.
     const { data: alreadySaved } = await supabase.from('merch_sales').select('*').eq('id', sale.id).maybeSingle()

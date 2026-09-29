@@ -172,8 +172,11 @@ export interface MerchSale {
   unitPrice: number
   note: string
   size?: string
+  paymentMethod?: MerchSalePaymentMethod
   createdAt?: string
 }
+
+export type MerchSalePaymentMethod = 'card' | 'cash'
 
 export function merchRevenueByConcert(concerts: Concert[], sales: MerchSale[]): Map<string, number> {
   const revenue = new Map<string, number>()
@@ -273,15 +276,21 @@ export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgre
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Despeses del concert', note: `Generat automàticament · ${concert.title}`,
     })
   }
-  const revenueByConcert = merchRevenueByConcert(concerts, sales)
-  for (const [concertId, merchTotal] of revenueByConcert) {
-    if (merchTotal <= 0) continue
-    const concert = concerts.find((item) => item.id === concertId)
-    const concertSales = sales.filter((sale) => sale.concertId === concertId)
+  for (const sale of sales) {
+    const amount = sale.quantity * sale.unitPrice
+    if (amount <= 0) continue
     generated.push({
-      id: `automatic:merch-total:${concertId}`, sourceType: 'merch_total', sourceId: concertId,
-      concertId, kind: 'ingres', amount: merchTotal, paymentMethod: 'bank', date: today, category: 'Marxandatge',
-      note: `Generat automàticament · ${concertSales.length ? `${concertSales.reduce((sum, sale) => sum + sale.quantity, 0)} unitats venudes` : 'Resum antic'} · ${concert?.title || 'Concert'}`,
+      id: `automatic:merch-sale:${sale.id}`, sourceType: 'merch_sale', sourceId: sale.id,
+      concertId: sale.concertId, kind: 'ingres', amount, paymentMethod: sale.paymentMethod === 'cash' ? 'cash' : 'bank',
+      date: sale.createdAt?.slice(0, 10) || today, category: 'Marxandatge', note: `Generat automàticament · ${sale.quantity} ${sale.quantity === 1 ? 'unitat venuda' : 'unitats venudes'}`,
+    })
+  }
+  for (const concert of concerts) {
+    if (concert.details.merchSales <= 0 || sales.some((sale) => sale.concertId === concert.id)) continue
+    generated.push({
+      id: `automatic:legacy-merch:${concert.id}`, sourceType: 'legacy_merch', sourceId: concert.id,
+      concertId: concert.id, kind: 'ingres', amount: concert.details.merchSales, paymentMethod: 'bank', date: today,
+      category: 'Marxandatge (resum antic)', note: `Generat automàticament · ${concert.title || 'Concert'}`,
     })
   }
   return generated
