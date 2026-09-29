@@ -16,7 +16,7 @@ interface ListeningVersion {
   audioSizeBytes?: number
 }
 interface ListeningSong { id: string; title: string; versions: ListeningVersion[]; lyrics?: string; notes?: string }
-interface ListeningResponse { songs: ListeningSong[]; expiresAt: string; snapshotHash: string; notModified?: boolean }
+interface ListeningResponse { songs: ListeningSong[]; bandName: string; expiresAt: string; snapshotHash: string; notModified?: boolean }
 
 function keepLiveAudio(next: ListeningResponse, previous: ListeningResponse | null): ListeningResponse {
   if (!previous) return next
@@ -113,7 +113,7 @@ export default function SongListening({ token }: { token: string }) {
         <div className="song-listening-intro">
           <span className="eyebrow">CANÇONS EN PROCÉS</span>
           <h1>Escolta amb calma<span>.</span></h1>
-          <p>Aquí trobaràs els àudios compartits per la banda. Les versions noves apareixen automàticament.</p>
+          <p>Aquí trobaràs els àudios compartits de {data?.bandName || 'la banda'}.</p>
         </div>
         {loading ? <div className="song-listening-state"><span className="song-listening-spinner" /><strong>Carregant les cançons…</strong></div> : null}
         {error && !data ? <div className="song-listening-state song-listening-error"><AudioLines size={24} /><strong>Enllaç no disponible</strong><p>{error}</p></div> : null}

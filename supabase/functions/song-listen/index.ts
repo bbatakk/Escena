@@ -8,7 +8,7 @@ const corsHeaders = {
   'Referrer-Policy': 'no-referrer',
 }
 
-type ShareRow = { id: string; expires_at: string; revoked_at: string | null; include_lyrics: boolean; include_notes: boolean }
+type ShareRow = { id: string; band_id: string; expires_at: string; revoked_at: string | null; include_lyrics: boolean; include_notes: boolean }
 type ProjectRow = { id: string; band_id: string; title: string; updated_at: string; lyrics?: string; notes?: string }
 type VersionRow = {
   id: string
@@ -64,10 +64,14 @@ Deno.serve(async (request) => {
   try {
     const admin = createClient(serviceUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
     const { data: share, error: shareError } = await admin.from('song_shares')
-      .select('id,expires_at,revoked_at,include_lyrics,include_notes').eq('token_hash', await tokenHash(token)).maybeSingle()
+      .select('id,band_id,expires_at,revoked_at,include_lyrics,include_notes').eq('token_hash', await tokenHash(token)).maybeSingle()
     if (shareError || !share || share.revoked_at || new Date(share.expires_at).getTime() <= Date.now()) {
       return json({ error: 'Aquest enllaç no és vàlid o ja no està actiu.' }, 404)
     }
+
+    const { data: band, error: bandError } = await admin.from('bands').select('name').eq('id', share.band_id).maybeSingle()
+    if (bandError) throw bandError
+    const bandName = typeof band?.name === 'string' && band.name.trim() ? band.name.trim().slice(0, 80) : 'la banda'
 
     const { data: selection, error: selectionError } = await admin.from('song_share_projects')
       .select('song_project_id').eq('share_id', share.id)
@@ -98,6 +102,7 @@ Deno.serve(async (request) => {
         && parts[0] === project.band_id && parts[1] === project.id && parts[2] === version.id && parts[3])
     })
     const snapshotHash = await tokenHash(JSON.stringify({
+      bandName,
       includeLyrics: share.include_lyrics,
       includeNotes: share.include_notes,
       projects: projectRows.map((project) => [project.id, project.title, project.updated_at,
@@ -133,7 +138,7 @@ Deno.serve(async (request) => {
       ...(share.include_lyrics && project.lyrics ? { lyrics: project.lyrics } : {}),
       ...(share.include_notes && project.notes ? { notes: project.notes } : {}),
     }))
-    return json({ songs, snapshotHash, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() })
+    return json({ songs, bandName, snapshotHash, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() })
   } catch {
     return json({ error: 'No s’ha pogut carregar aquest espai d’escolta.' }, 503)
   }
