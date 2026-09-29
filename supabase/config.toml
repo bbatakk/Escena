@@ -1,0 +1,2 @@
+[functions.song-listen]
+verify_jwt = false

@@ -20,6 +20,7 @@ const BandPeople = lazy(() => import('./BandPeople'))
 const BandMaterials = lazy(() => import('./BandMaterials'))
 const Setlists = lazy(() => import('./Setlists'))
 const Songs = lazy(() => import('./Songs'))
+const SongListening = lazy(() => import('./SongListening'))
 const TourPoster = lazy(() => import('./TourPoster'))
 type Screen = 'home' | 'list' | 'calendar' | 'detail' | 'form' | 'assistant' | 'library' | 'treasury' | 'merch' | 'people' | 'materials' | 'setlists' | 'songs' | 'poster' | 'settings'
 interface AppHistoryState { escena: true; screen: Screen; selectedId?: string; formInitial?: Concert }
@@ -298,6 +299,7 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
 }
 
 export default function App() {
+  const publicListenToken = /^\/listen\/([A-Za-z0-9_-]+)\/?$/.exec(window.location.pathname)?.[1] || null
   const [initialWorkspaceProfile] = useState(() => getCachedBandProfile())
   const [theme, setTheme] = useState<ThemeId>(() => {
     const stored = localStorage.getItem('escena-theme')
@@ -418,6 +420,7 @@ export default function App() {
   }, [online, session])
 
   if (!authReady) return <div className="loading-page">Carregant Escena…</div>
+  if (publicListenToken) return <Suspense fallback={<div className="loading-page">Carregant l’espai d’escolta…</div>}><SongListening token={publicListenToken} /></Suspense>
   if (cloudConfigured && !session) return <AuthScreen />
 
   const selected = concerts.find((item) => item.id === selectedId)

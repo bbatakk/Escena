@@ -97,6 +97,15 @@ export interface SongVersion {
   createdAt?: string
 }
 
+export interface SongShare {
+  id: string
+  createdAt: string
+  expiresAt: string
+  revokedAt?: string
+  songIds: string[]
+  token?: string
+}
+
 export const songStatusLabels: Record<SongProjectStatus, string> = {
   idea: 'Idea',
   en_proces: 'En procés',

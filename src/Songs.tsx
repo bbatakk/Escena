@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Archive, ExternalLink, FileAudio, Music, Pause, Pencil, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, X } from 'lucide-react'
-import { cloudConfigured, deleteSongVersion, listSongProjects, listSongVersions, removeSongVersionAudio, saveSongProject, saveSongVersion, signedSongAudioUrl, uploadSongVersionAudio } from './data'
-import { createId, formatDate, songStatusLabels, songVersionKindLabels, type SongProject, type SongProjectStatus, type SongVersion, type SongVersionKind } from './model'
+import { Archive, Check, Copy, ExternalLink, FileAudio, Link2, Music, Pause, Pencil, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, X } from 'lucide-react'
+import { cloudConfigured, createSongShare, deleteSongVersion, listSongProjects, listSongShares, listSongVersions, removeSongVersionAudio, revokeSongShare, saveSongProject, saveSongVersion, signedSongAudioUrl, uploadSongVersionAudio } from './data'
+import { createId, formatDate, songStatusLabels, songVersionKindLabels, type SongProject, type SongProjectStatus, type SongShare, type SongVersion, type SongVersionKind } from './model'
+import { songShareUrl } from './songShares'
+import { useDialogFocus } from './useDialogFocus'
 
 const statuses = Object.keys(songStatusLabels) as SongProjectStatus[]
 const versionKinds = Object.keys(songVersionKindLabels) as SongVersionKind[]
@@ -40,6 +42,14 @@ export default function Songs({ onDirtyChange }: { onDirtyChange: (dirty: boolea
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareIds, setShareIds] = useState<string[]>([])
+  const [shares, setShares] = useState<SongShare[]>([])
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareError, setShareError] = useState('')
+  const [copiedShareId, setCopiedShareId] = useState<string | null>(null)
+  useDialogFocus(shareOpen, '.song-share-dialog')
 
   useEffect(() => {
     let active = true
@@ -56,6 +66,21 @@ export default function Songs({ onDirtyChange }: { onDirtyChange: (dirty: boolea
     window.addEventListener('escena:offline-queue-change', load)
     return () => { active = false; window.removeEventListener('escena:offline-queue-change', load) }
   }, [])
+
+  useEffect(() => {
+    if (!shareOpen || !cloudConfigured) return
+    let active = true
+    setShareLoading(true); setShareError('')
+    void listSongShares().then((items) => { if (active) setShares(items) }).catch((cause) => { if (active) setShareError(cause instanceof Error ? cause.message : 'No s’han pogut carregar els enllaços.') }).finally(() => { if (active) setShareLoading(false) })
+    return () => { active = false }
+  }, [shareOpen])
+
+  useEffect(() => {
+    if (!shareOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setShareOpen(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [shareOpen])
 
   const selected = projects.find((project) => project.id === selectedId) || null
   useEffect(() => { setDraft(selected ? { ...selected } : null); setEditingVersionId(null); setVersionDraft(emptyVersion()); setVersionFile(null) }, [selected?.id, selected?.updatedAt])
@@ -178,8 +203,32 @@ export default function Songs({ onDirtyChange }: { onDirtyChange: (dirty: boolea
     finally { setLoadingAudio(null) }
   }
 
+  async function makeShare(event: FormEvent) {
+    event.preventDefault(); setShareBusy(true); setShareError('')
+    try {
+      const created = await createSongShare(shareIds)
+      setShares((items) => [created, ...items])
+      setShareIds([])
+    } catch (cause) { setShareError(cause instanceof Error ? cause.message : 'No s’ha pogut crear l’enllaç.') }
+    finally { setShareBusy(false) }
+  }
+
+  async function copyShare(share: SongShare) {
+    if (!share.token) { setShareError('Aquest enllaç només es pot recuperar des del navegador on es va crear. Revoca’l i crea’n un de nou si l’has perdut.'); return }
+    try { await navigator.clipboard.writeText(songShareUrl(window.location.origin, share.token)); setCopiedShareId(share.id); window.setTimeout(() => setCopiedShareId(null), 1800) }
+    catch { setShareError('No s’ha pogut copiar l’enllaç. Comprova els permisos del navegador.') }
+  }
+
+  async function revokeShare(share: SongShare) {
+    if (!window.confirm('Vols revocar aquest enllaç? El productor ja no podrà obrir ni actualitzar la pàgina d’escolta.')) return
+    setShareBusy(true); setShareError('')
+    try { await revokeSongShare(share.id); setShares((items) => items.map((item) => item.id === share.id ? { ...item, revokedAt: new Date().toISOString(), token: undefined } : item)) }
+    catch (cause) { setShareError(cause instanceof Error ? cause.message : 'No s’ha pogut revocar l’enllaç.') }
+    finally { setShareBusy(false) }
+  }
+
   return <div className="songs-shell">
-    <div className="page-heading songs-heading"><div><span className="eyebrow">TALLER DE CANÇONS</span><h1>Cançons en procés<span className="heading-period">.</span></h1><p>Un lloc per conservar idees, lletres, demos i maquetes mentre encara estan prenent forma.</p></div></div>
+    <div className="page-heading songs-heading"><div><span className="eyebrow">TALLER DE CANÇONS</span><h1>Cançons en procés<span className="heading-period">.</span></h1><p>Un lloc per conservar idees, lletres, demos i maquetes mentre encara estan prenent forma.</p></div>{cloudConfigured ? <button type="button" className="button button-secondary" onClick={() => { setShareIds(projects.filter((project) => !project.archived).map((project) => project.id)); setShareOpen(true) }}><Link2 size={16} /> Compartir per escoltar</button> : null}</div>
     <form className="songs-new-bar" onSubmit={(event) => void createProject(event)}><span className="songs-new-icon"><Music size={18} /></span><label><span className="sr-only">Títol de la nova cançó</span><input required maxLength={200} value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Títol provisional de la nova cançó" /></label><button className="button button-primary" disabled={busy}><Plus size={16} /> Nova cançó</button></form>
     <div className="songs-workspace">
       <aside className="songs-browser">
@@ -195,5 +244,8 @@ export default function Songs({ onDirtyChange }: { onDirtyChange: (dirty: boolea
         </section>
       </> : <div className="song-studio-empty"><Music size={30} /><span className="eyebrow">ESPAI DE TREBALL</span><h2>{projects.length ? 'Tria una cançó' : 'La primera idea comença aquí'}</h2><p>{projects.length ? 'Selecciona una fitxa de la llista per continuar escrivint o escoltar-ne les versions.' : 'Crea una cançó amb un títol provisional. La podràs canviar sempre que vulguis.'}</p></div>}</main>
     </div>{error ? <div className="global-error songs-error" role="alert">{error}<button type="button" aria-label="Tancar avís" onClick={() => setError('')}><X size={15} /></button></div> : null}
+    {shareOpen ? <div className="song-share-overlay"><section className="song-share-dialog" role="dialog" aria-modal="true" aria-labelledby="song-share-title"><header><div><span className="eyebrow">ENLLAÇ PRIVAT · NOMÉS ESCOLTA</span><h2 id="song-share-title">Compartir cançons</h2><p>El productor veurà només els títols i els àudios de les cançons triades. Les versions noves apareixeran automàticament.</p></div><button type="button" className="icon-button" aria-label="Tancar" onClick={() => { setShareOpen(false); setShareError('') }}><X size={19} /></button></header>
+      <form onSubmit={(event) => void makeShare(event)}><fieldset><legend>Cançons accessibles per aquest enllaç</legend>{projects.filter((project) => !project.archived).length ? projects.filter((project) => !project.archived).map((project) => <label className="song-share-choice" key={project.id}><input type="checkbox" checked={shareIds.includes(project.id)} onChange={(event) => setShareIds((ids) => event.target.checked ? [...ids, project.id] : ids.filter((id) => id !== project.id))} /><span><strong>{project.title}</strong><small>{versions.filter((version) => version.songId === project.id && version.audioPath).length} versions amb àudio ara · les noves s’afegiran soles</small></span></label>) : <p className="section-empty">Crea primer una cançó.</p>}</fieldset><div className="song-share-create"><span>L’enllaç caduca al cap de 30 dies i es pot revocar aquí.</span><button className="button button-primary" disabled={shareBusy || !shareIds.length}><Link2 size={15} /> {shareBusy ? 'Creant…' : 'Crear enllaç d’escolta'}</button></div></form>
+      {shareLoading ? <p className="section-empty">Carregant enllaços…</p> : null}{shares.length ? <div className="song-share-list"><h3>Enllaços creats</h3>{shares.map((share) => { const expired = new Date(share.expiresAt).getTime() <= Date.now(); const active = !share.revokedAt && !expired; return <div className="song-share-item" key={share.id}><div><strong>{share.songIds.map((id) => projects.find((project) => project.id === id)?.title || 'Cançó').join(' · ') || 'Sense cançons'}</strong><small>{active ? `Caduca ${formatDate(share.expiresAt.slice(0, 10))}` : share.revokedAt ? 'Revocat' : 'Caducat'}</small></div>{active ? <div><button type="button" className="text-button" onClick={() => void copyShare(share)}>{copiedShareId === share.id ? <><Check size={14} /> Copiat</> : <><Copy size={14} /> Copiar enllaç</>}</button><button type="button" className="text-button danger-text" disabled={shareBusy} onClick={() => void revokeShare(share)}>Revocar</button></div> : null}</div> })}</div> : null}{shareError ? <p className="form-error" role="alert">{shareError}</p> : null}</section></div> : null}
   </div>
 }

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { concertSettlement, merchRevenueByConcert, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, type SongProject, type SongVersion, emptyDetails, validateLabelAgreement } from './model'
+import { concertSettlement, createId, merchRevenueByConcert, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, type SongProject, type SongShare, type SongVersion, emptyDetails, validateLabelAgreement } from './model'
+import { createSongShareToken, hashSongShareToken } from './songShares'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -44,6 +45,7 @@ export function setDataSessionOwner(userId?: string): void {
 
 function songProjectsCacheKey(): string { return `${songProjectsKey}-${dataSessionOwner}` }
 function songVersionsCacheKey(): string { return `${songVersionsKey}-${dataSessionOwner}` }
+function songShareTokensKey(): string { return `escena-song-share-tokens-v1-${dataSessionOwner}` }
 
 export const backupVersion = 2
 export interface AppBackup {
@@ -1147,6 +1149,73 @@ export async function signedSongAudioUrl(path: string): Promise<string> {
   const { data, error } = await supabase.storage.from(songFileBucket).createSignedUrl(path, 60 * 60)
   if (error) throw storageErrorMessage(error)
   return data.signedUrl
+}
+
+interface SongShareRow { id: string; created_at: string; expires_at: string; revoked_at: string | null }
+
+function cachedSongShareTokens(): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(songShareTokensKey()) || '{}')
+    return isRecord(value) ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}
+  } catch { return {} }
+}
+
+export async function listSongShares(): Promise<SongShare[]> {
+  if (!supabase || offline()) throw new Error('Connecta’t a l’espai compartit per gestionar els enllaços d’escolta.')
+  const [{ data: rows, error }, tokens] = await Promise.all([
+    supabase.from('song_shares').select('id,created_at,expires_at,revoked_at').order('created_at', { ascending: false }),
+    Promise.resolve(cachedSongShareTokens()),
+  ])
+  if (error) throw error
+  const shares = (rows || []) as SongShareRow[]
+  if (!shares.length) return []
+  const { data: selected, error: selectedError } = await supabase.from('song_share_projects').select('share_id,song_project_id').in('share_id', shares.map((share) => share.id))
+  if (selectedError) throw selectedError
+  return shares.map((share) => ({
+    id: share.id,
+    createdAt: share.created_at,
+    expiresAt: share.expires_at,
+    revokedAt: share.revoked_at || undefined,
+    songIds: (selected || []).filter((item) => item.share_id === share.id).map((item) => item.song_project_id),
+    token: tokens[share.id],
+  }))
+}
+
+export async function createSongShare(songIds: string[]): Promise<SongShare> {
+  if (!supabase || offline()) throw new Error('Connecta’t a l’espai compartit per crear un enllaç d’escolta.')
+  const uniqueSongIds = [...new Set(songIds)]
+  if (!uniqueSongIds.length || uniqueSongIds.length > 20) throw new Error('Tria entre 1 i 20 cançons per compartir.')
+  const currentBandId = await bandId()
+  const { data: auth, error: authError } = await supabase.auth.getUser()
+  if (authError || !auth.user) throw new Error('Torna a iniciar sessió per crear l’enllaç.')
+  const token = createSongShareToken()
+  const id = createId()
+  const now = Date.now()
+  const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: inserted, error } = await supabase.from('song_shares').insert({
+    id, band_id: currentBandId, token_hash: await hashSongShareToken(token), created_by: auth.user.id, expires_at: expiresAt,
+  }).select('id,created_at,expires_at,revoked_at').single()
+  if (error) throw error
+  const { error: selectionError } = await supabase.from('song_share_projects').insert(uniqueSongIds.map((songId) => ({
+    share_id: id, song_project_id: songId, band_id: currentBandId,
+  })))
+  if (selectionError) {
+    await supabase.from('song_shares').update({ revoked_at: new Date().toISOString() }).eq('id', id)
+    throw selectionError
+  }
+  try { localStorage.setItem(songShareTokensKey(), JSON.stringify({ ...cachedSongShareTokens(), [id]: token })) } catch { /* Enllaç disponible en pantalla; la base no desa el token en pla. */ }
+  const saved = inserted as SongShareRow
+  return { id, createdAt: saved.created_at, expiresAt: saved.expires_at, songIds: uniqueSongIds, token }
+}
+
+export async function revokeSongShare(id: string): Promise<void> {
+  if (!supabase || offline()) throw new Error('Connecta’t a l’espai compartit per revocar l’enllaç.')
+  const { data, error } = await supabase.from('song_shares').update({ revoked_at: new Date().toISOString() }).eq('id', id).is('revoked_at', null).select('id').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Aquest enllaç ja no existeix o ja està revocat.')
+  const tokens = cachedSongShareTokens()
+  delete tokens[id]
+  try { localStorage.setItem(songShareTokensKey(), JSON.stringify(tokens)) } catch { /* La revocació al servidor ja és efectiva. */ }
 }
 
 interface MoneyRow { id: string; concert_id: string | null; kind: MoneyMovement['kind']; amount: number; date: string; category: string; note: string; payment_method?: MoneyMovement['paymentMethod']; source_type?: MoneyMovement['sourceType'] | null; source_id?: string | null }
