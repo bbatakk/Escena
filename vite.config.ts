@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react(), VitePWA({
     registerType: 'autoUpdate',
     includeAssets: ['favicon.svg'],
+    workbox: { navigateFallbackDenylist: [/^\/listen(?:\/|$)/] },
     manifest: {
       name: 'Escena · Els concerts, clars',
       short_name: 'Escena',
