@@ -106,7 +106,7 @@ export default function SongListening({ token }: { token: string }) {
   return (
     <main className="song-listening-page">
       <header className="song-listening-header">
-        <a className="song-listening-brand" href="/" aria-label="Escena"><span>e</span> escena</a>
+        <a className="song-listening-brand" href="/" aria-label="Escena"><img src="/escena-logo.svg" alt="" /><span>escena<i>.</i></span></a>
         <span><Headphones size={15} /> Espai privat d’escolta</span>
       </header>
       <section className="song-listening-content">

@@ -36,6 +36,10 @@ function BrandName() {
    return <span className="brand-name" aria-label="Escena"><span className="brand-letters" aria-hidden="true">escena</span><span className="brand-dot" aria-hidden="true">.</span></span>
 }
 
+function BrandMark() {
+  return <img className="brand-mark" src="/escena-logo.svg" alt="" />
+}
+
 function AuthScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -59,7 +63,7 @@ function AuthScreen() {
     } finally { setWorking(false) }
   }
 
-  return <div className="auth-page"><div className="auth-brand"><div className="brand-mark"><Music2 size={22} strokeWidth={2.3} /></div><BrandName /></div>
+  return <div className="auth-page"><div className="auth-brand"><BrandMark /><BrandName /></div>
     <div className="auth-panel"><span className="eyebrow">EL TEU ESPAI DE CONCERTS</span><h1>Tot el concert,<br /><em>al mateix lloc.</em></h1><p>Les dades, els horaris i el que queda pendent. Sense perdre el fil.</p>
       <form onSubmit={submit} className="auth-form"><label className="field">Correu electrònic <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label><label className="field">Contrasenya <input type="password" required minLength={6} autoComplete={creating ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} /></label>{message ? <p role="alert" className="auth-message">{message}</p> : null}<button type="submit" className="button button-primary" disabled={working}>{working ? 'Un moment…' : creating ? 'Crear espai' : 'Entrar'} <ArrowRight size={17} /></button></form>
       <button className="text-button auth-switch" type="button" onClick={() => { setCreating(!creating); setMessage('') }}>{creating ? 'Ja tens un compte? Entra' : 'Primera vegada? Crea un espai'}</button>
@@ -539,7 +543,7 @@ export default function App() {
   }
 
   return <div className={`app-layout ${themeClass(theme)}`}>
-    <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><div className="brand-mark"><Music2 size={21} strokeWidth={2.3} /></div><BrandName /><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">BANDA O ARTISTA</div><button type="button" className={`workspace-name ${workspaceProfileLoading ? 'workspace-name-loading' : ''}`} aria-label={workspaceName ? `Configurar l’espai ${workspaceName}` : 'Configurar l’espai de la banda'} onClick={() => navigate('settings')}><div className="workspace-avatar">{workspaceLogo ? <img src={workspaceLogo} alt="" /> : workspaceProfileLoading ? <Music2 size={18} /> : workspaceName.trim().charAt(0).toUpperCase() || 'B'}</div><span>{workspaceName || (workspaceProfileLoading ? 'Carregant banda…' : 'Configura la banda')}</span><SettingsIcon size={16} /></button>
+    <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}><div className="sidebar-brand"><BrandMark /><BrandName /><button className="icon-button close-menu" aria-label="Tancar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button></div><div className="workspace-label">BANDA O ARTISTA</div><button type="button" className={`workspace-name ${workspaceProfileLoading ? 'workspace-name-loading' : ''}`} aria-label={workspaceName ? `Configurar l’espai ${workspaceName}` : 'Configurar l’espai de la banda'} onClick={() => navigate('settings')}><div className="workspace-avatar">{workspaceLogo ? <img src={workspaceLogo} alt="" /> : workspaceProfileLoading ? <Music2 size={18} /> : workspaceName.trim().charAt(0).toUpperCase() || 'B'}</div><span>{workspaceName || (workspaceProfileLoading ? 'Carregant banda…' : 'Configura la banda')}</span><SettingsIcon size={16} /></button>
        <nav className="sidebar-nav" aria-label="Navegació principal">
          <div className="sidebar-nav-group"><span className="sidebar-nav-heading">Activitat</span><button className={screen === 'home' ? 'nav-active' : ''} onClick={() => navigate('home')}><House size={19} /> Inici</button><button className={screen === 'list' || screen === 'detail' || screen === 'form' ? 'nav-active' : ''} onClick={() => navigate('list')}><List size={19} /> Concerts</button><button className={screen === 'calendar' ? 'nav-active' : ''} onClick={() => navigate('calendar')}><CalendarDays size={19} /> Calendari</button></div>
           <div className="sidebar-nav-group"><span className="sidebar-nav-heading">Recursos</span><button className={screen === 'people' ? 'nav-active' : ''} onClick={() => navigate('people')}><UsersRound size={19} /> Persones</button><button className={screen === 'materials' ? 'nav-active' : ''} onClick={() => navigate('materials')}><PackageCheck size={19} /> Material</button><button className={screen === 'songs' ? 'nav-active' : ''} onClick={() => navigate('songs')}><AudioLines size={19} /> Cançons</button><button className={screen === 'setlists' ? 'nav-active' : ''} onClick={() => navigate('setlists')}><ListMusic size={19} /> Setlists</button><button className={screen === 'library' ? 'nav-active' : ''} onClick={() => navigate('library')}><FileText size={19} /> Documents</button></div>
