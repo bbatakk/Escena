@@ -103,6 +103,8 @@ export interface SongShare {
   expiresAt: string
   revokedAt?: string
   songIds: string[]
+  includeLyrics: boolean
+  includeNotes: boolean
   token?: string
 }
 

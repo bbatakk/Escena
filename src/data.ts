@@ -1151,7 +1151,7 @@ export async function signedSongAudioUrl(path: string): Promise<string> {
   return data.signedUrl
 }
 
-interface SongShareRow { id: string; created_at: string; expires_at: string; revoked_at: string | null }
+interface SongShareRow { id: string; created_at: string; expires_at: string; revoked_at: string | null; include_lyrics: boolean; include_notes: boolean }
 
 function cachedSongShareTokens(): Record<string, string> {
   try {
@@ -1163,7 +1163,7 @@ function cachedSongShareTokens(): Record<string, string> {
 export async function listSongShares(): Promise<SongShare[]> {
   if (!supabase || offline()) throw new Error('Connecta’t a l’espai compartit per gestionar els enllaços d’escolta.')
   const [{ data: rows, error }, tokens] = await Promise.all([
-    supabase.from('song_shares').select('id,created_at,expires_at,revoked_at').order('created_at', { ascending: false }),
+    supabase.from('song_shares').select('id,created_at,expires_at,revoked_at,include_lyrics,include_notes').order('created_at', { ascending: false }),
     Promise.resolve(cachedSongShareTokens()),
   ])
   if (error) throw error
@@ -1177,11 +1177,13 @@ export async function listSongShares(): Promise<SongShare[]> {
     expiresAt: share.expires_at,
     revokedAt: share.revoked_at || undefined,
     songIds: (selected || []).filter((item) => item.share_id === share.id).map((item) => item.song_project_id),
+    includeLyrics: share.include_lyrics,
+    includeNotes: share.include_notes,
     token: tokens[share.id],
   }))
 }
 
-export async function createSongShare(songIds: string[]): Promise<SongShare> {
+export async function createSongShare(songIds: string[], options: { includeLyrics: boolean; includeNotes: boolean }): Promise<SongShare> {
   if (!supabase || offline()) throw new Error('Connecta’t a l’espai compartit per crear un enllaç d’escolta.')
   const uniqueSongIds = [...new Set(songIds)]
   if (!uniqueSongIds.length || uniqueSongIds.length > 20) throw new Error('Tria entre 1 i 20 cançons per compartir.')
@@ -1194,7 +1196,8 @@ export async function createSongShare(songIds: string[]): Promise<SongShare> {
   const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString()
   const { data: inserted, error } = await supabase.from('song_shares').insert({
     id, band_id: currentBandId, token_hash: await hashSongShareToken(token), created_by: auth.user.id, expires_at: expiresAt,
-  }).select('id,created_at,expires_at,revoked_at').single()
+    include_lyrics: options.includeLyrics, include_notes: options.includeNotes,
+  }).select('id,created_at,expires_at,revoked_at,include_lyrics,include_notes').single()
   if (error) throw error
   const { error: selectionError } = await supabase.from('song_share_projects').insert(uniqueSongIds.map((songId) => ({
     share_id: id, song_project_id: songId, band_id: currentBandId,
@@ -1205,7 +1208,7 @@ export async function createSongShare(songIds: string[]): Promise<SongShare> {
   }
   try { localStorage.setItem(songShareTokensKey(), JSON.stringify({ ...cachedSongShareTokens(), [id]: token })) } catch { /* Enllaç disponible en pantalla; la base no desa el token en pla. */ }
   const saved = inserted as SongShareRow
-  return { id, createdAt: saved.created_at, expiresAt: saved.expires_at, songIds: uniqueSongIds, token }
+  return { id, createdAt: saved.created_at, expiresAt: saved.expires_at, songIds: uniqueSongIds, includeLyrics: saved.include_lyrics, includeNotes: saved.include_notes, token }
 }
 
 export async function revokeSongShare(id: string): Promise<void> {

@@ -15,7 +15,7 @@ interface ListeningVersion {
   audioMimeType: string
   audioSizeBytes?: number
 }
-interface ListeningSong { id: string; title: string; versions: ListeningVersion[] }
+interface ListeningSong { id: string; title: string; versions: ListeningVersion[]; lyrics?: string; notes?: string }
 interface ListeningResponse { songs: ListeningSong[]; expiresAt: string; snapshotHash: string; notModified?: boolean }
 
 function keepLiveAudio(next: ListeningResponse, previous: ListeningResponse | null): ListeningResponse {
@@ -103,5 +103,46 @@ export default function SongListening({ token }: { token: string }) {
     }
   }, [refresh])
 
-  return <main className="song-listening-page"><header className="song-listening-header"><a className="song-listening-brand" href="/" aria-label="Escena"><span>e</span> escena</a><span><Headphones size={15} /> Espai privat d’escolta</span></header><section className="song-listening-content"><div className="song-listening-intro"><span className="eyebrow">CANÇONS EN PROCÉS</span><h1>Escolta amb calma<span>.</span></h1><p>Aquí trobaràs els àudios compartits per la banda. Les versions noves apareixen automàticament.</p></div>{loading ? <div className="song-listening-state"><span className="song-listening-spinner" /><strong>Carregant les cançons…</strong></div> : null}{error && !data ? <div className="song-listening-state song-listening-error"><AudioLines size={24} /><strong>Enllaç no disponible</strong><p>{error}</p></div> : null}{data ? <><div className="song-listening-list">{data.songs.map((song, index) => <article className="listening-song" key={song.id}><div className="listening-song-heading"><span className="listening-song-index">{String(index + 1).padStart(2, '0')}</span><div><span className="eyebrow">CANÇÓ</span><h2>{song.title}</h2></div></div>{song.versions.length ? <div className="listening-versions">{song.versions.map((version) => <section className="listening-version" key={version.id}><div className="listening-version-meta"><div><strong>{version.name}</strong><small>{songVersionKindLabels[version.kind]} · {formatDate(version.recordedOn, { day: 'numeric', month: 'short', year: 'numeric' })}</small></div><span>{version.audioFileName}</span></div><audio controls preload="metadata" controlsList="nodownload" src={version.audioUrl} /></section>)}</div> : <p className="listening-await-audio">Encara no hi ha cap àudio pujat per a aquesta cançó.</p>}</article>)}</div>{error ? <p className="song-listening-refresh-error" role="status">{error}</p> : null}<footer className="song-listening-footer"><span>{lastChecked ? `Actualitzat ${lastChecked.toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit' })} · comprovació automàtica cada 15 segons` : 'Comprovació automàtica cada 15 segons'}</span><button type="button" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? <span className="song-listening-spinner small" /> : <RefreshCw size={14} />} Actualitzar</button></footer></> : null}<div className="song-listening-signoff"><Music size={14} /> Compartit de manera privada amb Escena</div></section></main>
+  return (
+    <main className="song-listening-page">
+      <header className="song-listening-header">
+        <a className="song-listening-brand" href="/" aria-label="Escena"><span>e</span> escena</a>
+        <span><Headphones size={15} /> Espai privat d’escolta</span>
+      </header>
+      <section className="song-listening-content">
+        <div className="song-listening-intro">
+          <span className="eyebrow">CANÇONS EN PROCÉS</span>
+          <h1>Escolta amb calma<span>.</span></h1>
+          <p>Aquí trobaràs els àudios compartits per la banda. Les versions noves apareixen automàticament.</p>
+        </div>
+        {loading ? <div className="song-listening-state"><span className="song-listening-spinner" /><strong>Carregant les cançons…</strong></div> : null}
+        {error && !data ? <div className="song-listening-state song-listening-error"><AudioLines size={24} /><strong>Enllaç no disponible</strong><p>{error}</p></div> : null}
+        {data ? <>
+          <div className="song-listening-list">
+            {data.songs.map((song, index) => <article className="listening-song" key={song.id}>
+              <div className="listening-song-heading">
+                <span className="listening-song-index">{String(index + 1).padStart(2, '0')}</span>
+                <div><span className="eyebrow">CANÇÓ</span><h2>{song.title}</h2></div>
+              </div>
+              {song.versions.length ? <div className="listening-versions">{song.versions.map((version) => <section className="listening-version" key={version.id}>
+                <div className="listening-version-meta">
+                  <div><strong>{version.name}</strong><small>{songVersionKindLabels[version.kind]} · {formatDate(version.recordedOn, { day: 'numeric', month: 'short', year: 'numeric' })}</small></div>
+                  <span>{version.audioFileName}</span>
+                </div>
+                <audio controls preload="metadata" controlsList="nodownload" src={version.audioUrl} />
+              </section>)}</div> : <p className="listening-await-audio">Encara no hi ha cap àudio pujat per a aquesta cançó.</p>}
+              {song.notes ? <section className="listening-song-text"><h3>Notes de treball</h3><p>{song.notes}</p></section> : null}
+              {song.lyrics ? <section className="listening-song-text listening-song-lyrics"><h3>Lletra</h3><p>{song.lyrics}</p></section> : null}
+            </article>)}
+          </div>
+          {error ? <p className="song-listening-refresh-error" role="status">{error}</p> : null}
+          <footer className="song-listening-footer">
+            <span>{lastChecked ? `Actualitzat ${lastChecked.toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit' })} · comprovació automàtica cada 15 segons` : 'Comprovació automàtica cada 15 segons'}</span>
+            <button type="button" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? <span className="song-listening-spinner small" /> : <RefreshCw size={14} />} Actualitzar</button>
+          </footer>
+        </> : null}
+        <div className="song-listening-signoff"><Music size={14} /> Compartit de manera privada amb Escena</div>
+      </section>
+    </main>
+  )
 }

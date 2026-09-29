@@ -8,8 +8,8 @@ const corsHeaders = {
   'Referrer-Policy': 'no-referrer',
 }
 
-type ShareRow = { id: string; expires_at: string; revoked_at: string | null }
-type ProjectRow = { id: string; band_id: string; title: string; updated_at: string }
+type ShareRow = { id: string; expires_at: string; revoked_at: string | null; include_lyrics: boolean; include_notes: boolean }
+type ProjectRow = { id: string; band_id: string; title: string; updated_at: string; lyrics?: string; notes?: string }
 type VersionRow = {
   id: string
   band_id: string
@@ -64,7 +64,7 @@ Deno.serve(async (request) => {
   try {
     const admin = createClient(serviceUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
     const { data: share, error: shareError } = await admin.from('song_shares')
-      .select('id,expires_at,revoked_at').eq('token_hash', await tokenHash(token)).maybeSingle()
+      .select('id,expires_at,revoked_at,include_lyrics,include_notes').eq('token_hash', await tokenHash(token)).maybeSingle()
     if (shareError || !share || share.revoked_at || new Date(share.expires_at).getTime() <= Date.now()) {
       return json({ error: 'Aquest enllaç no és vàlid o ja no està actiu.' }, 404)
     }
@@ -75,8 +75,11 @@ Deno.serve(async (request) => {
     const projectIds = [...new Set((selection || []).map((item) => item.song_project_id as string))]
     if (!projectIds.length) return json({ error: 'Encara no hi ha cançons disponibles en aquest enllaç.' }, 404)
 
+    const projectColumns = ['id', 'band_id', 'title', 'updated_at']
+    if (share.include_lyrics) projectColumns.push('lyrics')
+    if (share.include_notes) projectColumns.push('notes')
     const { data: projects, error: projectsError } = await admin.from('song_projects')
-      .select('id,band_id,title,updated_at').in('id', projectIds).eq('archived', false).order('title', { ascending: true })
+      .select(projectColumns.join(',')).in('id', projectIds).eq('archived', false).order('title', { ascending: true })
     if (projectsError) throw projectsError
     const projectRows = (projects || []) as ProjectRow[]
     if (!projectRows.length) return json({ error: 'Aquest enllaç no té cançons disponibles.' }, 404)
@@ -95,7 +98,10 @@ Deno.serve(async (request) => {
         && parts[0] === project.band_id && parts[1] === project.id && parts[2] === version.id && parts[3])
     })
     const snapshotHash = await tokenHash(JSON.stringify({
-      projects: projectRows.map(({ id, title, updated_at }) => [id, title, updated_at]),
+      includeLyrics: share.include_lyrics,
+      includeNotes: share.include_notes,
+      projects: projectRows.map((project) => [project.id, project.title, project.updated_at,
+        ...(share.include_lyrics ? [project.lyrics || ''] : []), ...(share.include_notes ? [project.notes || ''] : [])]),
       versions: versionRows.map(({ id, updated_at, audio_path }) => [id, updated_at, audio_path]),
     }))
     if (knownSnapshot === snapshotHash && !refreshUrls) return json({ notModified: true, snapshotHash })
@@ -124,6 +130,8 @@ Deno.serve(async (request) => {
       id: project.id,
       title: project.title,
       versions: versionsByProject.get(project.id) || [],
+      ...(share.include_lyrics && project.lyrics ? { lyrics: project.lyrics } : {}),
+      ...(share.include_notes && project.notes ? { notes: project.notes } : {}),
     }))
     return json({ songs, snapshotHash, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() })
   } catch {
