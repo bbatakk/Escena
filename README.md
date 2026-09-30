@@ -20,6 +20,16 @@ Sense variables d'entorn funciona en **mode demostració**: tres concerts d'exem
 3. A **Authentication → URL Configuration** de Supabase posa la URL principal HTTPS de Vercel (per exemple, `https://escena.vercel.app`) com a **Site URL** i afegeix aquesta mateixa URL a **Redirect URLs**. El registre envia la confirmació a l'origen on s'ha obert l'app; si proves una URL de previsualització diferent, afegeix-la també a les Redirect URLs. Supabase ha de permetre el destí o pot tornar al Site URL configurat.
 4. Reinicia el servidor. Des de la pantalla d'accés crea el compte compartit de la banda. Si Supabase demana verificar el correu, confirma'l abans d'entrar. Fes servir aquest compte als dispositius de prova. Si ja havies confirmat un correu amb un enllaç que acabava a `localhost`, prova d'entrar directament des de la URL de Vercel: normalment el compte ja està confirmat.
 
+### Accés amb Google
+
+Per activar «Continua amb Google» a més de correu i contrasenya:
+
+1. A [Google Cloud Console](https://console.cloud.google.com/apis/credentials), configura la pantalla de consentiment OAuth i crea un client OAuth de tipus **Aplicació web**. A **URI de redirecció autoritzats** afegeix `https://lzdbayvjzvbygswdxiac.supabase.co/auth/v1/callback` (substitueix el domini pel del teu projecte Supabase si és diferent). Google redirigeix a Supabase, no directament a Vercel.
+2. A **Supabase → Authentication → Providers → Google**, activa Google i introdueix-hi el **Client ID** i el **Client Secret** de Google Cloud. Conserva el secret només a Supabase, mai a `VITE_*` ni al repositori.
+3. A **Supabase → Authentication → URL Configuration**, configura `https://escenaweb.vercel.app` com a **Site URL** i inclou `https://escenaweb.vercel.app` i `http://localhost:5173` a **Redirect URLs** per a producció i desenvolupament. Afegeix també altres dominis des d'on hagis d'iniciar sessió.
+
+El mateix botó serveix per registrar-se i entrar. El primer accés amb un usuari nou de Supabase crea un espai de banda propi; si ja tens un espai amb correu i contrasenya, comprova que la identitat de Google s'ha vinculat al mateix usuari abans de donar per fet que veuràs les mateixes dades.
+
 5. Per adjuntar fitxers, executa també `supabase/migrations/202609240002_concert_documents.sql` a l'SQL Editor. Crea un bucket **privat** amb polítiques per banda. Desa el concert i el document, obre la fitxa i utilitza **Adjuntar fitxer**. Màxim 20 MB per fitxer. L'app crea enllaços temporals per obrir-los; adjuntar no canvia l'estat d'«enviat»/«rebut». Els enllaços HTTPS externs continuen funcionant.
 6. Per utilitzar **Documents de la banda**, executa `supabase/migrations/202609240003_band_documents.sql` després de les dues anteriors. A la biblioteca pots desar riders, bios o enllaços i adjuntar fitxers privats. A la fitxa d'un concert, tria'n un per afegir-hi una còpia de la referència amb un estat propi. Arxivar-lo a la biblioteca no afecta els concerts que ja l'utilitzen; si substitueixes el fitxer compartit, els concerts anteriors mantenen l'original. Si ja havies executat la migració 003 abans d'aquesta correcció, executa també `supabase/migrations/202609240004_repair_shared_storage.sql`.
 

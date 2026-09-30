@@ -51,12 +51,29 @@ function BrandMark() {
   return <img className="brand-mark" src="/escena-logo.svg" alt="" />
 }
 
-function AuthScreen() {
+function AuthScreen({ initialError = '' }: { initialError?: string }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [creating, setCreating] = useState(false)
   const [working, setWorking] = useState(false)
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(initialError)
+
+  async function signInWithGoogle() {
+    if (!supabase) return
+    setWorking(true)
+    setMessage('')
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      })
+      if (error) setMessage(error.message)
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'No s’ha pogut connectar amb Google. Torna-ho a provar.')
+    } finally {
+      setWorking(false)
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -94,6 +111,16 @@ function AuthScreen() {
           <em>al mateix lloc.</em>
         </h1>
         <p>Les dades, els horaris i el que queda pendent. Sense perdre el fil.</p>
+        <button type="button" className="button auth-google" disabled={working} onClick={() => void signInWithGoogle()}>
+          <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M21.35 12.2c0-.66-.06-1.3-.17-1.92H12v3.64h5.25a4.5 4.5 0 0 1-1.95 2.95v2.45h3.16c1.85-1.7 2.89-4.2 2.89-7.12Z" />
+            <path fill="#34A853" d="M12 21.5c2.65 0 4.88-.87 6.5-2.36l-3.16-2.45c-.88.59-2 .94-3.34.94a6.01 6.01 0 0 1-5.65-4.17H3.1v2.52A9.5 9.5 0 0 0 12 21.5Z" />
+            <path fill="#FBBC05" d="M6.35 13.46a5.73 5.73 0 0 1 0-3.65V7.29H3.1a9.5 9.5 0 0 0 0 8.69l3.25-2.52Z" />
+            <path fill="#EA4335" d="M12 5.64c1.44 0 2.73.49 3.75 1.48l2.82-2.82A9.08 9.08 0 0 0 12 2.5a9.5 9.5 0 0 0-8.9 5.79l3.25 2.52A6.01 6.01 0 0 1 12 5.64Z" />
+          </svg>
+          Continua amb Google
+        </button>
+        <div className="auth-divider"><span>o amb correu</span></div>
         <form onSubmit={submit} className="auth-form">
           <label className="field">
             Correu electrònic <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -1385,6 +1412,12 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
 }
 
 export default function App() {
+  const [oauthError] = useState(() => {
+    const query = new URLSearchParams(window.location.search)
+    const hash = new URLSearchParams(window.location.hash.slice(1))
+    return query.get('error_description') || hash.get('error_description') ||
+      (query.has('error') || hash.has('error') ? 'No s’ha pogut iniciar la sessió amb Google. Torna-ho a provar.' : '')
+  })
   const publicListenToken = /^\/listen\/([A-Za-z0-9_-]+)\/?$/.exec(window.location.pathname)?.[1] || null
   const [initialWorkspaceProfile] = useState(() => getCachedBandProfile())
   const [theme, setTheme] = useState<ThemeId>(() => {
@@ -1504,6 +1537,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // Keep the OAuth callback URL intact until Supabase has processed the session.
+    if (!authReady) return
     window.history.replaceState({ escena: true, screen: 'home' } satisfies AppHistoryState, '')
     const restore = (event: PopStateEvent) => {
       const state = event.state as AppHistoryState | null
@@ -1530,7 +1565,7 @@ export default function App() {
     }
     window.addEventListener('popstate', restore)
     return () => window.removeEventListener('popstate', restore)
-  }, [screen, formInitial])
+  }, [authReady, screen, formInitial])
 
   useEffect(() => {
     if (!authReady || (cloudConfigured && !session)) {
@@ -1603,7 +1638,7 @@ export default function App() {
         <SongListening token={publicListenToken} />
       </Suspense>
     )
-  if (cloudConfigured && !session) return <AuthScreen />
+  if (cloudConfigured && !session) return <AuthScreen initialError={oauthError} />
 
   const selected = concerts.find((item) => item.id === selectedId)
   const sorted = [...concerts].sort((a, b) => a.date.localeCompare(b.date))
