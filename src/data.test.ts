@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeResources, backupVersion, isConcertOwnedFile, isSongOwnedFile, validateBackup } from './data'
+import { accountStorageKey, activeResources, backupVersion, isConcertOwnedFile, isSongOwnedFile, validateBackup } from './data'
 import { newConcert, type SongVersion } from './model'
 
 describe('propietat dels fitxers d’un concert', () => {
@@ -9,6 +9,16 @@ describe('propietat dels fitxers d’un concert', () => {
     expect(isConcertOwnedFile(concert, `${band}/${concert.id}/document/arxiu.pdf`)).toBe(true)
     expect(isConcertOwnedFile(concert, `${band}/shared/document/arxiu.pdf`)).toBe(false)
     expect(isConcertOwnedFile(concert, `${band}/${newConcert().id}/document/arxiu.pdf`)).toBe(false)
+  })
+})
+
+describe('aïllament local entre comptes', () => {
+  it('genera claus independents per a la caché i la cua offline de cada usuari', () => {
+    const cache = 'escena-demo-concerts-v1'
+    const queue = 'escena-offline-data-queue-v1'
+    expect(accountStorageKey(cache, 'user-a')).not.toBe(accountStorageKey(cache, 'user-b'))
+    expect(accountStorageKey(queue, 'user-a')).not.toBe(accountStorageKey(queue, 'user-b'))
+    expect(accountStorageKey(cache, 'user-a')).toBe(accountStorageKey(cache, 'user-a'))
   })
 })
 

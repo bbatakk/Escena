@@ -39,8 +39,30 @@ const songVersionsKey = 'escena-song-versions-v1'
 const defaultBandName = 'La nostra banda'
 let dataSessionOwner = supabase ? 'anonymous' : 'local'
 
+export function accountStorageKey(key: string, userId: string): string {
+  return `${key}-account-${userId}`
+}
+
+export function dataStorageKey(key: string): string {
+  return supabase && key !== 'escena-theme' ? accountStorageKey(key, dataSessionOwner) : key
+}
+
+function localGet(key: string): string | null {
+  return localStorage.getItem(dataStorageKey(key))
+}
+
+function localSet(key: string, value: string): void {
+  localStorage.setItem(dataStorageKey(key), value)
+}
+
+function localRemove(key: string): void {
+  localStorage.removeItem(dataStorageKey(key))
+}
+
 export function setDataSessionOwner(userId?: string): void {
-  dataSessionOwner = userId || (supabase ? 'anonymous' : 'local')
+  const nextOwner = userId || (supabase ? 'anonymous' : 'local')
+  if (nextOwner === dataSessionOwner) return
+  dataSessionOwner = nextOwner
 }
 
 function songProjectsCacheKey(): string { return `${songProjectsKey}-${dataSessionOwner}` }
@@ -70,7 +92,7 @@ export async function exportBackup(): Promise<AppBackup> {
   const [concerts, library, money, merchProducts, merchSales, people, materials, setlists, songProjects, songVersions, workspaceName, labelAgreement] = await Promise.all([listConcerts(), listBandDocuments(), listMoneyMovements(), listMerchProducts(), listMerchSales(), listAllResources<BandPerson>('band_people'), listAllResources<BandMaterial>('band_materials'), listAllResources<SetlistTemplate>('setlist_templates'), listSongProjects(), listSongVersions(), getBandName(), getBandLabel()])
   const safeProducts = supabase ? merchProducts.map((product) => ({ ...product, imagePath: undefined, imageUrl: undefined, imageDataUrl: undefined })) : merchProducts
   const safeVersions = songVersions.map((version) => ({ ...version, audioPath: undefined }))
-  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localStorage.getItem('escena-theme') || undefined, workspaceName, labelAgreement, concerts, library, money: money.filter((movement) => !movement.sourceType), merchProducts: safeProducts, merchSales, people, materials, setlists, songProjects, songVersions: safeVersions }
+  return { version: backupVersion, exportedAt: new Date().toISOString(), theme: localGet('escena-theme') || undefined, workspaceName, labelAgreement, concerts, library, money: money.filter((movement) => !movement.sourceType), merchProducts: safeProducts, merchSales, people, materials, setlists, songProjects, songVersions: safeVersions }
 }
 
 function validLabel(value: unknown): boolean {
@@ -117,17 +139,17 @@ export function validateBackup(value: unknown): value is AppBackup {
 }
 
 export async function getBandName(): Promise<string> {
-  if (!supabase || offline()) return localStorage.getItem(bandNameKey) || defaultBandName
+  if (!supabase || offline()) return localGet(bandNameKey) || defaultBandName
   const { data, error } = await supabase.from('bands').select('name').eq('id', await bandId()).single()
   if (error) throw error
   const name = data.name?.trim() || defaultBandName
-  localStorage.setItem(bandNameKey, name)
+  localSet(bandNameKey, name)
   return name
 }
 
 export function getCachedBandLabel(): LabelAgreement | null {
   if (supabase) return null
-  try { const saved: unknown = JSON.parse(localStorage.getItem(bandLabelKey) || 'null'); return validLabel(saved) ? saved as LabelAgreement | null : null } catch { return null }
+  try { const saved: unknown = JSON.parse(localGet(bandLabelKey) || 'null'); return validLabel(saved) ? saved as LabelAgreement | null : null } catch { return null }
 }
 
 export async function getBandLabel(): Promise<LabelAgreement | null> {
@@ -136,7 +158,7 @@ export async function getBandLabel(): Promise<LabelAgreement | null> {
   if (!auth.session) throw new Error('Cal iniciar sessió per consultar la discogràfica.')
   const cacheKey = `${bandLabelKey}-${auth.session.user.id}`
   if (offline()) {
-    const cached = localStorage.getItem(cacheKey)
+    const cached = localGet(cacheKey)
     if (cached === null) throw new Error('No hi ha cap configuració de discogràfica disponible sense connexió.')
     const value: unknown = JSON.parse(cached)
     if (!validLabel(value)) throw new Error('La configuració guardada no és vàlida.')
@@ -145,7 +167,7 @@ export async function getBandLabel(): Promise<LabelAgreement | null> {
   const { data, error } = await supabase.from('bands').select('label_name,label_tiers').eq('id', await bandId()).single()
   if (error) throw error
   const label = data.label_name ? validateLabelAgreement({ name: data.label_name, tiers: data.label_tiers }) : null
-  localStorage.setItem(cacheKey, JSON.stringify(label))
+  localSet(cacheKey, JSON.stringify(label))
   return label
 }
 
@@ -158,7 +180,7 @@ export async function saveBandLabel(value: LabelAgreement | null): Promise<Label
   }
   const { data: auth } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
   const cacheKey = supabase && auth.session ? `${bandLabelKey}-${auth.session.user.id}` : bandLabelKey
-  localStorage.setItem(cacheKey, JSON.stringify(label))
+  localSet(cacheKey, JSON.stringify(label))
   return label
 }
 
@@ -166,28 +188,28 @@ export interface BandProfile { name: string; logoUrl?: string }
 
 export function getCachedBandProfile(): BandProfile {
   try {
-    const name = localStorage.getItem(bandNameKey) || (supabase ? '' : defaultBandName)
-    if (!supabase) return { name: name || defaultBandName, logoUrl: localStorage.getItem(bandLogoKey) || undefined }
-    const cached = JSON.parse(localStorage.getItem(bandLogoUrlCacheKey) || 'null') as { url?: string; expiresAt?: number } | null
+    const name = localGet(bandNameKey) || (supabase ? '' : defaultBandName)
+    if (!supabase) return { name: name || defaultBandName, logoUrl: localGet(bandLogoKey) || undefined }
+    const cached = JSON.parse(localGet(bandLogoUrlCacheKey) || 'null') as { url?: string; expiresAt?: number } | null
     return { name, logoUrl: cached?.expiresAt && cached.expiresAt > Date.now() + 30_000 ? cached.url : undefined }
   } catch { return { name: supabase ? '' : defaultBandName } }
 }
 
 export async function getBandProfile(): Promise<BandProfile> {
   const name = await getBandName()
-  if (!supabase) return { name, logoUrl: localStorage.getItem(bandLogoKey) || undefined }
+  if (!supabase) return { name, logoUrl: localGet(bandLogoKey) || undefined }
   if (offline()) return { name, logoUrl: getCachedBandProfile().logoUrl }
   const { data, error } = await supabase.from('bands').select('logo_path').eq('id', await bandId()).single()
   if (error) return { name }
   if (!data.logo_path) return { name }
   const { data: signed, error: signedError } = await supabase.storage.from('band-assets').createSignedUrl(data.logo_path, 60 * 60)
   if (signedError) return { name }
-  localStorage.setItem(bandLogoUrlCacheKey, JSON.stringify({ url: signed.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 }))
+  localSet(bandLogoUrlCacheKey, JSON.stringify({ url: signed.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 }))
   return { name, logoUrl: signed.signedUrl }
 }
 
 export function saveLocalBandLogo(dataUrl: string): string {
-  localStorage.setItem(bandLogoKey, dataUrl)
+  localSet(bandLogoKey, dataUrl)
   return dataUrl
 }
 
@@ -208,19 +230,19 @@ export async function saveBandLogo(file: File): Promise<string> {
   if (current.logo_path) void supabase.storage.from('band-assets').remove([current.logo_path])
   const { data: signed, error: signedError } = await supabase.storage.from('band-assets').createSignedUrl(path, 60 * 60)
   if (signedError) throw signedError
-  localStorage.setItem(bandLogoUrlCacheKey, JSON.stringify({ url: signed.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 }))
+  localSet(bandLogoUrlCacheKey, JSON.stringify({ url: signed.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 }))
   return signed.signedUrl
 }
 
 export async function removeBandLogo(): Promise<void> {
-  if (!supabase) { localStorage.removeItem(bandLogoKey); return }
+  if (!supabase) { localRemove(bandLogoKey); return }
   if (offline()) throw new Error('Connecta’t a internet per treure la imatge de l’espai compartit.')
   const id = await bandId()
   const { data, error } = await supabase.from('bands').select('logo_path').eq('id', id).single()
   if (error) throw error
   const { error: updateError } = await supabase.from('bands').update({ logo_path: null }).eq('id', id)
   if (updateError) throw updateError
-  localStorage.removeItem(bandLogoUrlCacheKey)
+  localRemove(bandLogoUrlCacheKey)
   if (data.logo_path) { const { error: removeError } = await supabase.storage.from('band-assets').remove([data.logo_path]); if (removeError) throw removeError }
 }
 
@@ -228,30 +250,30 @@ export async function saveBandName(value: string): Promise<string> {
   const name = value.trim().replace(/\s+/g, ' ')
   if (!name) throw new Error('Escriu el nom de la banda.')
   if (name.length > 80) throw new Error('El nom no pot superar els 80 caràcters.')
-  if (!supabase) { localStorage.setItem(bandNameKey, name); return name }
+  if (!supabase) { localSet(bandNameKey, name); return name }
   if (offline()) throw new Error('Connecta’t a internet per canviar el nom de l’espai compartit.')
   const { error } = await supabase.from('bands').update({ name }).eq('id', await bandId())
   if (error) throw error
-  localStorage.setItem(bandNameKey, name)
+  localSet(bandNameKey, name)
   return name
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
 
 export function importLocalBackup(backup: AppBackup): void {
-  localStorage.setItem(demoKey, JSON.stringify(backup.concerts.map(normalizeConcert)))
-  localStorage.setItem(libraryKey, JSON.stringify(backup.library.map((item) => ({ ...item, archived: item.archived ?? false }))))
-  localStorage.setItem(moneyKey, JSON.stringify(backup.money.map((item) => ({ ...item, category: item.category || '', note: item.note || '', paymentMethod: item.paymentMethod === 'cash' ? 'cash' : 'bank' }))))
-  localStorage.setItem(merchProductsKey, JSON.stringify(backup.merchProducts.map((item) => ({ ...item, active: item.active ?? true, imagePath: undefined, imageUrl: item.imageDataUrl ? undefined : item.imageUrl }))))
-  localStorage.setItem(merchSalesKey, JSON.stringify(backup.merchSales.map((item) => ({ ...item, note: item.note || '' }))))
-  localStorage.setItem(peopleKey, JSON.stringify(backup.people.map((item) => ({ ...item, active: item.active ?? true }))))
-  localStorage.setItem(materialsKey, JSON.stringify(backup.materials.map((item) => ({ ...item, active: item.active ?? true, category: item.category || '' }))))
-  localStorage.setItem(setlistsKey, JSON.stringify(backup.setlists.map((item) => ({ ...item, active: item.active ?? true }))))
-  if (backup.songProjects) localStorage.setItem(songProjectsCacheKey(), JSON.stringify(backup.songProjects))
-  if (backup.songVersions) localStorage.setItem(songVersionsCacheKey(), JSON.stringify(backup.songVersions))
+  localSet(demoKey, JSON.stringify(backup.concerts.map(normalizeConcert)))
+  localSet(libraryKey, JSON.stringify(backup.library.map((item) => ({ ...item, archived: item.archived ?? false }))))
+  localSet(moneyKey, JSON.stringify(backup.money.map((item) => ({ ...item, category: item.category || '', note: item.note || '', paymentMethod: item.paymentMethod === 'cash' ? 'cash' : 'bank' }))))
+  localSet(merchProductsKey, JSON.stringify(backup.merchProducts.map((item) => ({ ...item, active: item.active ?? true, imagePath: undefined, imageUrl: item.imageDataUrl ? undefined : item.imageUrl }))))
+  localSet(merchSalesKey, JSON.stringify(backup.merchSales.map((item) => ({ ...item, note: item.note || '' }))))
+  localSet(peopleKey, JSON.stringify(backup.people.map((item) => ({ ...item, active: item.active ?? true }))))
+  localSet(materialsKey, JSON.stringify(backup.materials.map((item) => ({ ...item, active: item.active ?? true, category: item.category || '' }))))
+  localSet(setlistsKey, JSON.stringify(backup.setlists.map((item) => ({ ...item, active: item.active ?? true }))))
+  if (backup.songProjects) localSet(songProjectsCacheKey(), JSON.stringify(backup.songProjects))
+  if (backup.songVersions) localSet(songVersionsCacheKey(), JSON.stringify(backup.songVersions))
   if (backup.theme) localStorage.setItem('escena-theme', backup.theme)
-  if (backup.workspaceName) localStorage.setItem(bandNameKey, backup.workspaceName)
-  if (backup.labelAgreement !== undefined) localStorage.setItem(bandLabelKey, JSON.stringify(backup.labelAgreement))
+  if (backup.workspaceName) localSet(bandNameKey, backup.workspaceName)
+  if (backup.labelAgreement !== undefined) localSet(bandLabelKey, JSON.stringify(backup.labelAgreement))
 }
 
 export async function importBackup(backup: AppBackup): Promise<void> {
@@ -305,8 +327,8 @@ export async function importBackup(backup: AppBackup): Promise<void> {
 }
 
 function offline(): boolean { return typeof navigator !== 'undefined' && !navigator.onLine }
-function readCache<T>(key: string): T[] { try { return JSON.parse(localStorage.getItem(key) || '[]') as T[] } catch { return [] } }
-function writeCache<T>(key: string, value: T[]): void { localStorage.setItem(key, JSON.stringify(value)) }
+function readCache<T>(key: string): T[] { try { return JSON.parse(localGet(key) || '[]') as T[] } catch { return [] } }
+function writeCache<T>(key: string, value: T[]): void { localSet(key, JSON.stringify(value)) }
 export function activeResources<T extends { active: boolean }>(items: T[]): T[] { return items.filter((item) => item.active) }
 
 interface OfflineSyncError { key: string; message: string; conflict: boolean; updatedAt: string }
@@ -562,7 +584,7 @@ function fromRow(row: ConcertRow): Concert {
 }
 
 function localConcerts(): Concert[] {
-  const saved = localStorage.getItem(demoKey)
+  const saved = localGet(demoKey)
   if (!saved) return demoConcerts()
   try {
     return (JSON.parse(saved) as Concert[]).map(normalizeConcert)
@@ -582,10 +604,10 @@ export async function listConcerts(): Promise<Concert[]> {
       if (index >= 0) concerts[index] = queued
       else concerts.push(queued)
     }
-    localStorage.setItem(offlineConcertsKey, JSON.stringify(concerts))
+    localSet(offlineConcertsKey, JSON.stringify(concerts))
     return concerts
   } catch (error) {
-    const cached = localStorage.getItem(offlineConcertsKey)
+    const cached = localGet(offlineConcertsKey)
     if (cached) return (JSON.parse(cached) as Concert[]).map(normalizeConcert)
     throw error
   }
@@ -600,18 +622,18 @@ export async function saveConcert(concert: Concert, currentLabel?: LabelAgreemen
   if (!supabase) {
     const next = localConcerts().filter((item) => item.id !== concert.id)
     const saved = { ...concert, updatedAt: new Date().toISOString() }
-    localStorage.setItem(demoKey, JSON.stringify([...next, saved]))
+    localSet(demoKey, JSON.stringify([...next, saved]))
     await syncLocalConcertIncome(saved, currentLabel)
     return saved
   }
 
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    const queued = JSON.parse(localStorage.getItem(offlineQueueKey) || '[]') as Concert[]
-    localStorage.setItem(offlineQueueKey, JSON.stringify([...queued.filter((item) => item.id !== concert.id), concert]))
+    const queued = JSON.parse(localGet(offlineQueueKey) || '[]') as Concert[]
+    localSet(offlineQueueKey, JSON.stringify([...queued.filter((item) => item.id !== concert.id), concert]))
     clearOfflineError(`concert:${concert.id}`)
-    const cached = JSON.parse(localStorage.getItem(offlineConcertsKey) || '[]') as Concert[]
+    const cached = JSON.parse(localGet(offlineConcertsKey) || '[]') as Concert[]
     const saved = { ...concert, updatedAt: concert.updatedAt || new Date().toISOString() }
-    localStorage.setItem(offlineConcertsKey, JSON.stringify([...cached.filter((item) => item.id !== concert.id), saved]))
+    localSet(offlineConcertsKey, JSON.stringify([...cached.filter((item) => item.id !== concert.id), saved]))
     await syncLocalConcertIncome(saved, currentLabel)
     notifyOfflineQueueChange()
     return saved
@@ -644,7 +666,7 @@ export async function saveConcert(concert: Concert, currentLabel?: LabelAgreemen
 
 export async function syncOfflineConcerts(): Promise<number> {
   if (!supabase || (typeof navigator !== 'undefined' && !navigator.onLine)) return 0
-  const queued = JSON.parse(localStorage.getItem(offlineQueueKey) || '[]') as Concert[]
+  const queued = JSON.parse(localGet(offlineQueueKey) || '[]') as Concert[]
   if (!queued.length) return 0
   let synced = 0
   const remaining: Concert[] = []
@@ -658,7 +680,7 @@ export async function syncOfflineConcerts(): Promise<number> {
   }
   const latest = readCache<Concert>(offlineQueueKey)
   const failedIds = new Set(remaining.map((concert) => concert.id))
-  localStorage.setItem(offlineQueueKey, JSON.stringify(latest.filter((concert) => {
+  localSet(offlineQueueKey, JSON.stringify(latest.filter((concert) => {
     if (failedIds.has(concert.id)) return true
     const beforeSync = queued.find((item) => item.id === concert.id)
     return !beforeSync || JSON.stringify(beforeSync) !== JSON.stringify(concert)
@@ -679,17 +701,17 @@ export async function resolveOfflineConcertConflict(id: string, choice: 'local' 
   if (choice === 'local') {
     if (!latest) throw new Error('El concert s’ha eliminat al servidor. Tria «Fer servir servidor» per descartar els canvis locals.')
     const rebased = { ...local, updatedAt: latest.updatedAt }
-    localStorage.setItem(offlineQueueKey, JSON.stringify([...queued.filter((item) => item.id !== id), rebased]))
+    localSet(offlineQueueKey, JSON.stringify([...queued.filter((item) => item.id !== id), rebased]))
     const cache = readCache<Concert>(offlineConcertsKey)
-    localStorage.setItem(offlineConcertsKey, JSON.stringify([...cache.filter((item) => item.id !== id), rebased]))
+    localSet(offlineConcertsKey, JSON.stringify([...cache.filter((item) => item.id !== id), rebased]))
     clearOfflineError(`concert:${id}`)
     notifyOfflineQueueChange()
     return rebased
   }
 
-  localStorage.setItem(offlineQueueKey, JSON.stringify(queued.filter((item) => item.id !== id)))
+  localSet(offlineQueueKey, JSON.stringify(queued.filter((item) => item.id !== id)))
   const cache = readCache<Concert>(offlineConcertsKey)
-  localStorage.setItem(offlineConcertsKey, JSON.stringify(latest
+  localSet(offlineConcertsKey, JSON.stringify(latest
     ? [...cache.filter((item) => item.id !== id), latest]
     : cache.filter((item) => item.id !== id)))
   clearOfflineError(`concert:${id}`)
@@ -815,7 +837,7 @@ export async function syncOfflineData(): Promise<number> {
 
 export async function deleteConcert(id: string, expectedUpdatedAt?: string): Promise<void> {
   if (!supabase) {
-    localStorage.setItem(demoKey, JSON.stringify(localConcerts().filter((item) => item.id !== id)))
+    localSet(demoKey, JSON.stringify(localConcerts().filter((item) => item.id !== id)))
     return
   }
   const query = supabase.from('concerts').delete().eq('id', id)
@@ -887,7 +909,7 @@ function fromLibraryRow(row: LibraryRow): BandDocument {
 
 export async function listBandDocuments(): Promise<BandDocument[]> {
   if (!supabase) {
-    try { return JSON.parse(localStorage.getItem(libraryKey) || '[]') as BandDocument[] }
+    try { return JSON.parse(localGet(libraryKey) || '[]') as BandDocument[] }
     catch { return [] }
   }
   const { data, error } = await supabase.from('band_documents').select('*').order('created_at', { ascending: true })
@@ -905,7 +927,7 @@ async function bandId(): Promise<string> {
 export async function saveBandDocument(document: BandDocument): Promise<BandDocument> {
   if (!supabase) {
     const all = await listBandDocuments()
-    localStorage.setItem(libraryKey, JSON.stringify([...all.filter((item) => item.id !== document.id), document]))
+    localSet(libraryKey, JSON.stringify([...all.filter((item) => item.id !== document.id), document]))
     return document
   }
   const { data, error } = await supabase.from('band_documents').upsert({
@@ -920,7 +942,7 @@ export async function saveBandDocument(document: BandDocument): Promise<BandDocu
 export async function deleteBandDocument(document: BandDocument): Promise<void> {
   if (!supabase) {
     const all = await listBandDocuments()
-    localStorage.setItem(libraryKey, JSON.stringify(all.filter((item) => item.id !== document.id)))
+    localSet(libraryKey, JSON.stringify(all.filter((item) => item.id !== document.id)))
     return
   }
   const concerts = await listConcerts()
@@ -1152,7 +1174,7 @@ interface SongShareRow { id: string; created_at: string; expires_at: string; rev
 
 function cachedSongShareTokens(): Record<string, string> {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(songShareTokensKey()) || '{}')
+    const value: unknown = JSON.parse(localGet(songShareTokensKey()) || '{}')
     return isRecord(value) ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}
   } catch { return {} }
 }
@@ -1203,7 +1225,7 @@ export async function createSongShare(songIds: string[], options: { includeLyric
     await supabase.from('song_shares').update({ revoked_at: new Date().toISOString() }).eq('id', id)
     throw selectionError
   }
-  try { localStorage.setItem(songShareTokensKey(), JSON.stringify({ ...cachedSongShareTokens(), [id]: token })) } catch { /* Enllaç disponible en pantalla; la base no desa el token en pla. */ }
+  try { localSet(songShareTokensKey(), JSON.stringify({ ...cachedSongShareTokens(), [id]: token })) } catch { /* Enllaç disponible en pantalla; la base no desa el token en pla. */ }
   const saved = inserted as SongShareRow
   return { id, createdAt: saved.created_at, expiresAt: saved.expires_at, songIds: uniqueSongIds, includeLyrics: saved.include_lyrics, includeNotes: saved.include_notes, token }
 }
@@ -1215,7 +1237,7 @@ export async function revokeSongShare(id: string): Promise<void> {
   if (!data) throw new Error('Aquest enllaç ja no existeix o ja està revocat.')
   const tokens = cachedSongShareTokens()
   delete tokens[id]
-  try { localStorage.setItem(songShareTokensKey(), JSON.stringify(tokens)) } catch { /* La revocació al servidor ja és efectiva. */ }
+  try { localSet(songShareTokensKey(), JSON.stringify(tokens)) } catch { /* La revocació al servidor ja és efectiva. */ }
 }
 
 interface MoneyRow { id: string; concert_id: string | null; kind: MoneyMovement['kind']; amount: number; date: string; category: string; note: string; payment_method?: MoneyMovement['paymentMethod']; source_type?: MoneyMovement['sourceType'] | null; source_id?: string | null }
@@ -1234,7 +1256,7 @@ export async function saveMoneyMovement(movement: MoneyMovement): Promise<MoneyM
   movement = { ...movement, paymentMethod: movement.paymentMethod === 'cash' ? 'cash' : 'bank' }
   if (!supabase) {
     const all = await listMoneyMovements()
-    localStorage.setItem(moneyKey, JSON.stringify([movement, ...all.filter((item) => item.id !== movement.id)]))
+    localSet(moneyKey, JSON.stringify([movement, ...all.filter((item) => item.id !== movement.id)]))
     if (movement.kind === 'despesa') await syncLocalConcertExpenseById(movement.concertId)
     return movement
   }
@@ -1255,7 +1277,7 @@ export async function deleteMoneyMovement(id: string): Promise<void> {
   if (!supabase) {
     const all = await listMoneyMovements()
     if (all.find((item) => item.id === id)?.sourceType) throw new Error('Els moviments automàtics no es poden eliminar manualment.')
-    localStorage.setItem(moneyKey, JSON.stringify(all.filter((item) => item.id !== id)))
+    localSet(moneyKey, JSON.stringify(all.filter((item) => item.id !== id)))
     const removed = all.find((item) => item.id === id)
     if (removed?.kind === 'despesa') await syncLocalConcertExpenseById(removed.concertId)
     return
@@ -1289,7 +1311,7 @@ export async function listMerchProducts(): Promise<MerchProduct[]> {
 }
 
 export async function saveMerchProduct(product: MerchProduct): Promise<MerchProduct> {
-  if (!supabase) { const all = await listMerchProducts(); localStorage.setItem(merchProductsKey, JSON.stringify([...all.filter((item) => item.id !== product.id), product])); return product }
+  if (!supabase) { const all = await listMerchProducts(); localSet(merchProductsKey, JSON.stringify([...all.filter((item) => item.id !== product.id), product])); return product }
   if (offline()) { const all = readCache<MerchProduct>(merchProductsKey); const previous = all.find((item) => item.id === product.id) ?? null; writeCache(merchProductsKey, [...all.filter((item) => item.id !== product.id), product]); queueData('product', 'save', product, previous, true); return product }
   const { data, error } = await supabase.from('merch_products').upsert({ id: product.id, band_id: await bandId(), name: product.name.trim(), price: product.price, stock: product.stock, active: product.active, sizes: product.sizes || [], image_path: product.imagePath ?? null }).select('*').single()
   if (error) throw error
@@ -1351,7 +1373,7 @@ export async function listMerchSales(): Promise<MerchSale[]> {
 }
 
 export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
-  if (!supabase) { const all = await listMerchSales(); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; localStorage.setItem(merchSalesKey, JSON.stringify([saved, ...all.filter((item) => item.id !== saved.id)])); await syncLocalMerchTotalMovement(); return saved }
+  if (!supabase) { const all = await listMerchSales(); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; localSet(merchSalesKey, JSON.stringify([saved, ...all.filter((item) => item.id !== saved.id)])); await syncLocalMerchTotalMovement(); return saved }
   if (offline()) { const all = readCache<MerchSale>(merchSalesKey); const saved = { ...sale, createdAt: sale.createdAt || new Date().toISOString() }; writeCache(merchSalesKey, [saved, ...all.filter((item) => item.id !== saved.id)]); queueData('sale', 'save', saved); await syncLocalMerchTotalMovement(); return saved }
   const { data, error } = await supabase.from('merch_sales').insert({ id: sale.id, band_id: await bandId(), concert_id: sale.concertId, product_id: sale.productId, quantity: sale.quantity, unit_price: sale.unitPrice, note: sale.note.trim(), size: sale.size || null, payment_method: sale.paymentMethod === 'cash' ? 'cash' : 'card' }).select('*').single()
   if (error) {
@@ -1368,7 +1390,7 @@ export async function saveMerchSale(sale: MerchSale): Promise<MerchSale> {
 }
 
 export async function deleteMerchSale(id: string): Promise<void> {
-  if (!supabase) { const all = await listMerchSales(); localStorage.setItem(merchSalesKey, JSON.stringify(all.filter((item) => item.id !== id))); await syncLocalMerchTotalMovement(); return }
+  if (!supabase) { const all = await listMerchSales(); localSet(merchSalesKey, JSON.stringify(all.filter((item) => item.id !== id))); await syncLocalMerchTotalMovement(); return }
   if (offline()) { const all = readCache<MerchSale>(merchSalesKey); const previous = all.find((item) => item.id === id) ?? null; writeCache(merchSalesKey, all.filter((item) => item.id !== id)); queueData('sale', 'delete', id, previous, true); await syncLocalMerchTotalMovement(); return }
   const { error } = await supabase.from('merch_sales').delete().eq('id', id)
   if (error) throw error

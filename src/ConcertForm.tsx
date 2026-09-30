@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
-import { listBandDocuments, listResource } from './data'
+import { dataStorageKey, listBandDocuments, listResource } from './data'
 import { concertSettlement, createId, formatMoney, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type LabelAgreement, type MoneyMovementPaymentMethod, type SetlistTemplate, statusLabels } from './model'
 
 const newConcertDraftKey = 'escena-new-concert-draft-id-v1'
@@ -16,7 +16,7 @@ interface Props {
 export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, labelAgreement }: Props) {
   const [initialDraft] = useState<Concert | null>(() => {
     try {
-      const saved: unknown = JSON.parse(localStorage.getItem(`escena-concert-draft-${initial.id}`) || 'null')
+      const saved: unknown = JSON.parse(localStorage.getItem(dataStorageKey(`escena-concert-draft-${initial.id}`)) || 'null')
       return saved && typeof saved === 'object' && 'id' in saved && saved.id === initial.id && 'details' in saved && saved.details && typeof saved.details === 'object'
         ? saved as Concert
         : null
@@ -35,7 +35,8 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
   const [setlists, setSetlists] = useState<SetlistTemplate[]>([])
   const d = concert.details
   const settlement = concertSettlement(concert, labelAgreement)
-  const draftKey = `escena-concert-draft-${initial.id}`
+  const draftKey = dataStorageKey(`escena-concert-draft-${initial.id}`)
+  const scopedNewConcertDraftKey = dataStorageKey(newConcertDraftKey)
 
   useEffect(() => {
     let active = true
@@ -49,13 +50,13 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
     const timer = window.setTimeout(() => {
       try {
         localStorage.setItem(draftKey, JSON.stringify(concert))
-        if (!initial.updatedAt && !initial.title) localStorage.setItem(newConcertDraftKey, initial.id)
+        if (!initial.updatedAt && !initial.title) localStorage.setItem(scopedNewConcertDraftKey, initial.id)
         setDraftSaved(true)
       }
       catch { setError('No s’ha pogut guardar l’esborrany en aquest dispositiu.') }
     }, 500)
     return () => window.clearTimeout(timer)
-  }, [concert, draftKey, initial, initialDraft])
+  }, [concert, draftKey, initial, initialDraft, scopedNewConcertDraftKey])
 
   useEffect(() => {
     const changed = draftSaved || JSON.stringify(concert) !== JSON.stringify(initial)
@@ -72,7 +73,7 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
     if (dirty) {
       try {
         localStorage.setItem(draftKey, JSON.stringify(concert))
-        if (!initial.updatedAt && !initial.title) localStorage.setItem(newConcertDraftKey, initial.id)
+        if (!initial.updatedAt && !initial.title) localStorage.setItem(scopedNewConcertDraftKey, initial.id)
       } catch { setError('No s’ha pogut guardar l’esborrany en aquest dispositiu.'); return }
     } else clearDraft()
     onDirtyChange(false)
@@ -110,7 +111,7 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
   function clearDraft() {
     try {
       localStorage.removeItem(draftKey)
-      if (localStorage.getItem(newConcertDraftKey) === initial.id) localStorage.removeItem(newConcertDraftKey)
+      if (localStorage.getItem(scopedNewConcertDraftKey) === initial.id) localStorage.removeItem(scopedNewConcertDraftKey)
     } catch { /* El desat principal ja s’ha completat. */ }
   }
 

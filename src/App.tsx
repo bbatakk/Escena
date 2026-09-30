@@ -3,8 +3,8 @@ import type { Session } from '@supabase/supabase-js'
 import { ArrowLeft, ArrowRight, AudioLines, CalendarDays, Check, ChevronLeft, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu, House, ListMusic, LogOut, Mail, MapPinned, Music2, Navigation, PackageCheck, Paperclip, Pencil, Phone, Plus, Search, ShoppingBag, Sparkles, Ticket, Trash2, Image as ImageIcon, Settings as SettingsIcon, UsersRound, Wallet, X } from 'lucide-react'
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
-import { cloudConfigured, deleteConcert, deleteMerchSale, discardOfflineDataChange, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, getOfflineSyncStatus, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, listResource, removeConcertDocumentFile, resolveOfflineConcertConflict, resolveOfflineDataConflict, saveConcert, saveMerchSale, saveResource, setDataSessionOwner, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument, type OfflineSyncItem } from './data'
-import { concertClosingSummary, concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, shouldMarkConcertRealized, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate } from './model'
+import { cloudConfigured, dataStorageKey, deleteConcert, deleteMerchSale, discardOfflineDataChange, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, getOfflineSyncStatus, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, listResource, removeConcertDocumentFile, resolveOfflineConcertConflict, resolveOfflineDataConflict, saveConcert, saveMerchSale, saveResource, setDataSessionOwner, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument, type OfflineSyncItem } from './data'
+import { concertClosingSummary, concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 import { useDialogFocus } from './useDialogFocus'
 
@@ -36,7 +36,7 @@ function safeLink(value: string): string | null {
 
 function BrandName() {
   return (
-    <span className="brand-name" aria-label="Escena">
+    <span className="brand-name" role="img" aria-label="Escena">
       <span className="brand-letters" aria-hidden="true">
         escena
       </span>
@@ -155,25 +155,6 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
 
 function concertPlace(concert: { venue: string; city: string; country: string }): string {
   return [concert.venue, concert.city, concert.country].filter(Boolean).join(' · ')
-}
-
-function localDateString(date = new Date()): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-async function markPastConcertsRealized(concerts: Concert[]): Promise<Concert[]> {
-  const today = localDateString()
-  return Promise.all(
-    concerts.map(async (concert) => {
-      if (!shouldMarkConcertRealized(concert, today)) return concert
-      const realized: Concert = { ...concert, status: 'realitzat' }
-      try {
-        return await saveConcert(realized)
-      } catch {
-        return realized
-      }
-    }),
-  )
 }
 
 function ConcertCard({ concert, onOpen }: { concert: Concert; onOpen: () => void }) {
@@ -1581,7 +1562,6 @@ export default function App() {
     setLoading(true)
     if (cloudConfigured) setConcerts([])
     listConcerts()
-      .then(markPastConcertsRealized)
       .then((data) => {
         if (alive) {
           setConcerts(data)
@@ -1611,14 +1591,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    setOfflineSyncStatus(getOfflineSyncStatus())
+  }, [session?.user.id])
+
+  useEffect(() => {
     const becameOnline = () => {
       setOnline(true)
       void Promise.all([syncOfflineConcerts(), syncOfflineData()]).then(() => {
         if (cloudConfigured && session)
-          void listConcerts()
-            .then(markPastConcertsRealized)
-            .then(setConcerts)
-            .catch(() => {})
+          void listConcerts().then(setConcerts).catch(() => {})
       })
     }
     const becameOffline = () => setOnline(false)
@@ -1686,11 +1667,12 @@ export default function App() {
     formExitApprovedRef.current = false
     if (recoverNewDraft && !initial.updatedAt && !initial.title) {
       try {
-        const draftId = localStorage.getItem('escena-new-concert-draft-id-v1')
+        const newConcertDraftKey = dataStorageKey('escena-new-concert-draft-id-v1')
+        const draftId = localStorage.getItem(newConcertDraftKey)
         if (draftId) {
-          const saved = JSON.parse(localStorage.getItem(`escena-concert-draft-${draftId}`) || 'null') as Concert | null
+          const saved = JSON.parse(localStorage.getItem(dataStorageKey(`escena-concert-draft-${draftId}`)) || 'null') as Concert | null
           if (saved?.id === draftId && saved.details) initial = { ...initial, id: draftId }
-          else localStorage.removeItem('escena-new-concert-draft-id-v1')
+          else localStorage.removeItem(newConcertDraftKey)
         }
       } catch {
         /* Continua amb un formulari nou si la recuperació local no està disponible. */
