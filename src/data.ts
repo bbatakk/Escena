@@ -411,9 +411,9 @@ async function syncLocalConcertExpenseById(id?: string): Promise<void> {
 
 async function syncLocalMerchTotalMovement(): Promise<void> {
   const [concerts, sales] = await Promise.all([listConcerts(), listMerchSales()])
-  const generated = generatedTreasuryMovements(concerts, getCachedBandLabel(), sales, localToday()).filter((item) => item.sourceType === 'merch_sale' || item.sourceType === 'legacy_merch')
+  const generated = generatedTreasuryMovements(concerts, getCachedBandLabel(), sales, localToday()).filter((item) => item.sourceType === 'merch_total_card' || item.sourceType === 'merch_total_cash')
   const activeSources = new Set(generated.map((item) => `${item.sourceType}:${item.sourceId}`))
-  for (const movement of readCache<MoneyMovement>(moneyKey).filter((item) => (item.sourceType === 'merch_sale' || item.sourceType === 'legacy_merch' || item.sourceType === 'merch_total') && (!item.sourceId || !activeSources.has(`${item.sourceType}:${item.sourceId}`)))) {
+  for (const movement of readCache<MoneyMovement>(moneyKey).filter((item) => ['merch_sale', 'legacy_merch', 'merch_total', 'merch_total_card', 'merch_total_cash'].includes(item.sourceType || '') && (!item.sourceId || !activeSources.has(`${item.sourceType}:${item.sourceId}`)))) {
     if (movement.sourceType && movement.sourceId) writeLocalGeneratedMovement(movement.sourceType, movement.sourceId, null)
   }
   for (const movement of generated) {

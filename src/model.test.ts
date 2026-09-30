@@ -178,8 +178,8 @@ describe('moviments d’ingressos automàtics', () => {
       { sourceType: 'concert_fee', sourceId: 'paid', amount: 510, kind: 'ingres', paymentMethod: 'cash' },
       { sourceType: 'concert_expense', sourceId: 'paid', amount: 12, kind: 'despesa', paymentMethod: 'bank' },
       { sourceType: 'concert_expense', sourceId: 'legacy', amount: 4, kind: 'despesa', paymentMethod: 'cash' },
-      { sourceType: 'merch_sale', sourceId: 'sale', concertId: 'paid', amount: 20, date: '2026-10-05', kind: 'ingres', paymentMethod: 'cash' },
-      { sourceType: 'legacy_merch', sourceId: 'legacy', concertId: 'legacy', amount: 25, date: '2026-10-06', kind: 'ingres', paymentMethod: 'bank' },
+      { sourceType: 'merch_total_cash', sourceId: 'paid', concertId: 'paid', amount: 20, date: '2026-10-06', kind: 'ingres', paymentMethod: 'cash' },
+      { sourceType: 'merch_total_card', sourceId: 'legacy', concertId: 'legacy', amount: 25, date: '2026-10-06', kind: 'ingres', paymentMethod: 'bank' },
     ])
   })
 
@@ -202,6 +202,7 @@ describe('moviments d’ingressos automàtics', () => {
     ])
     expect(moneyMovementBalance(movements, 'bank')).toBe(10)
     expect(moneyMovementBalance(movements, 'cash')).toBe(20)
+    expect(movements).toHaveLength(2)
   })
 })
 

@@ -136,7 +136,7 @@ export interface MoneyMovement {
   category: string
   note: string
   paymentMethod?: MoneyMovementPaymentMethod
-  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total' | 'concert_expense'
+  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total' | 'merch_total_card' | 'merch_total_cash' | 'concert_expense'
   sourceId?: string
 }
 
@@ -276,22 +276,20 @@ export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgre
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Despeses del concert', note: `Generat automàticament · ${concert.title}`,
     })
   }
-  for (const sale of sales) {
-    const amount = sale.quantity * sale.unitPrice
-    if (amount <= 0) continue
-    generated.push({
-      id: `automatic:merch-sale:${sale.id}`, sourceType: 'merch_sale', sourceId: sale.id,
-      concertId: sale.concertId, kind: 'ingres', amount, paymentMethod: sale.paymentMethod === 'cash' ? 'cash' : 'bank',
-      date: sale.createdAt?.slice(0, 10) || today, category: 'Marxandatge', note: `Generat automàticament · ${sale.quantity} ${sale.quantity === 1 ? 'unitat venuda' : 'unitats venudes'}`,
-    })
-  }
   for (const concert of concerts) {
-    if (concert.details.merchSales <= 0 || sales.some((sale) => sale.concertId === concert.id)) continue
-    generated.push({
-      id: `automatic:legacy-merch:${concert.id}`, sourceType: 'legacy_merch', sourceId: concert.id,
-      concertId: concert.id, kind: 'ingres', amount: concert.details.merchSales, paymentMethod: 'bank', date: today,
-      category: 'Marxandatge (resum antic)', note: `Generat automàticament · ${concert.title || 'Concert'}`,
-    })
+    const concertSales = sales.filter((sale) => sale.concertId === concert.id)
+    const totals = concertSales.length
+      ? { card: concertSales.filter((sale) => sale.paymentMethod !== 'cash').reduce((sum, sale) => sum + sale.quantity * sale.unitPrice, 0), cash: concertSales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.quantity * sale.unitPrice, 0) }
+      : { card: concert.details.merchSales, cash: 0 }
+    for (const paymentMethod of ['card', 'cash'] as const) {
+      const amount = totals[paymentMethod]
+      if (amount <= 0) continue
+      generated.push({
+        id: `automatic:merch-total-${paymentMethod}:${concert.id}`, sourceType: paymentMethod === 'cash' ? 'merch_total_cash' : 'merch_total_card', sourceId: concert.id,
+        concertId: concert.id, kind: 'ingres', amount, paymentMethod: paymentMethod === 'cash' ? 'cash' : 'bank', date: today,
+        category: 'Marxandatge', note: `Total de vendes amb ${paymentMethod === 'cash' ? 'efectiu' : 'targeta'} · ${concert.title || 'Concert'}`,
+      })
+    }
   }
   return generated
 }
