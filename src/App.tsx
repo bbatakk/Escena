@@ -54,6 +54,7 @@ function BrandMark() {
 function AuthScreen({ initialError = '' }: { initialError?: string }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [creating, setCreating] = useState(false)
   const [working, setWorking] = useState(false)
   const [message, setMessage] = useState(initialError)
@@ -85,9 +86,19 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!supabase) return
-    setWorking(true)
     setMessage('')
     setMessageType('error')
+
+    if (creating && password.length < 6) {
+      setMessage('La contrasenya ha de tenir com a mínim 6 caràcters.')
+      return
+    }
+    if (creating && password !== confirmPassword) {
+      setMessage('Les contrasenyes no coincideixen.')
+      return
+    }
+
+    setWorking(true)
     try {
       const result = creating
         ? await supabase.auth.signUp({
@@ -142,8 +153,16 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
             Correu electrònic <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </label>
           <label className="field">
-            Contrasenya <input type="password" required minLength={6} autoComplete={creating ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} />
+            Contrasenya <input type="password" required minLength={6} autoComplete={creating ? 'new-password' : 'current-password'} aria-describedby={creating ? 'password-help' : undefined} value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
+          {creating ? (
+            <>
+              <small id="password-help" className="auth-field-help">Com a mínim 6 caràcters.</small>
+              <label className="field">
+                Repeteix la contrasenya <input type="password" required minLength={6} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+              </label>
+            </>
+          ) : null}
           {message ? (
             <p role={messageType === 'error' ? 'alert' : 'status'} className={`auth-message ${messageType === 'success' ? 'success' : ''}`}>
               {message}
@@ -158,7 +177,10 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
           type="button"
           onClick={() => {
             setCreating(!creating)
+            setPassword('')
+            setConfirmPassword('')
             setMessage('')
+            setMessageType('error')
           }}
         >
           {creating ? 'Ja tens un compte? Entra' : 'Primera vegada? Crea un espai'}
