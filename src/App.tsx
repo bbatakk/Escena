@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { ArrowLeft, ArrowRight, AudioLines, CalendarDays, Check, ChevronLeft, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, List, MapPin, Menu, House, ListMusic, LogOut, Mail, MapPinned, Music2, Navigation, PackageCheck, Paperclip, Pencil, Phone, Plus, Search, ShoppingBag, Sparkles, Ticket, Trash2, Image as ImageIcon, Settings as SettingsIcon, UsersRound, Wallet, X } from 'lucide-react'
 import ConcertForm from './ConcertForm'
 import ConcertAssistant from './ConcertAssistant'
-import { cloudConfigured, dataStorageKey, deleteConcert, deleteMerchSale, discardOfflineDataChange, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, getOfflineSyncStatus, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, listResource, removeConcertDocumentFile, resolveOfflineConcertConflict, resolveOfflineDataConflict, saveConcert, saveMerchSale, saveResource, setDataSessionOwner, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument, type OfflineSyncItem } from './data'
+import { cloudConfigured, completeBandOnboarding, dataStorageKey, deleteConcert, deleteMerchSale, discardOfflineDataChange, getBandLabel, getBandProfile, getCachedBandLabel, getCachedBandProfile, getOfflineSyncStatus, isConcertOwnedFile, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, listResource, removeConcertDocumentFile, resolveOfflineConcertConflict, resolveOfflineDataConflict, saveConcert, saveMerchSale, saveResource, setDataSessionOwner, signedDocumentUrl, supabase, syncOfflineConcerts, syncOfflineData, uploadConcertDocument, type OfflineSyncItem } from './data'
 import { concertClosingSummary, concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 import { useDialogFocus } from './useDialogFocus'
@@ -187,6 +187,55 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
         </button>
       </div>
       <p className="auth-foot">Pensat per a bandes que no volen deixar cap detall enrere.</p>
+    </div>
+  )
+}
+
+function OnboardingScreen({ initialName, onComplete, onSignOut }: { initialName: string; onComplete: (name: string) => void; onSignOut: () => void }) {
+  const [name, setName] = useState(initialName === 'La nostra banda' ? '' : initialName)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBusy(true)
+    setMessage('')
+    try {
+      onComplete(await completeBandOnboarding(name))
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'No s’ha pogut preparar l’espai. Torna-ho a provar.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="auth-page onboarding-page">
+      <div className="auth-brand">
+        <BrandMark />
+        <BrandName />
+      </div>
+      <div className="auth-panel onboarding-panel">
+        <span className="eyebrow">PRIMER PAS</span>
+        <h1>
+          Com es diu el teu
+          <br />
+          <em>projecte musical?</em>
+        </h1>
+        <p>Farem servir aquest nom a l’espai de treball, els cartells i els enllaços d’escolta. El podràs canviar més endavant.</p>
+        <form className="auth-form" onSubmit={(event) => void submit(event)}>
+          <label className="field">
+            Nom de la banda o artista
+            <input autoFocus required maxLength={80} autoComplete="organization" value={name} onChange={(event) => setName(event.target.value)} placeholder="Per exemple, Mishima" />
+          </label>
+          {message ? <p className="auth-message" role="alert">{message}</p> : null}
+          <button type="submit" className="button button-primary" disabled={busy || !name.trim()}>
+            {busy ? 'Preparant l’espai…' : 'Entrar a Escena'} <ArrowRight size={17} />
+          </button>
+        </form>
+        <button type="button" className="text-button auth-switch" disabled={busy} onClick={onSignOut}>Entrar amb un altre compte</button>
+      </div>
+      <p className="auth-foot">Aquest nom identifica el teu espai; no és un perfil públic.</p>
     </div>
   )
 }
@@ -1451,9 +1500,10 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [workspaceName, setWorkspaceName] = useState(initialWorkspaceProfile.name)
   const [workspaceLogo, setWorkspaceLogo] = useState<string | undefined>(initialWorkspaceProfile.logoUrl)
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(initialWorkspaceProfile.onboardingComplete ?? (cloudConfigured ? null : true))
   const [labelAgreement, setLabelAgreement] = useState<LabelAgreement | null>(() => getCachedBandLabel())
   const [labelReady, setLabelReady] = useState(!cloudConfigured)
-  const [workspaceProfileLoading, setWorkspaceProfileLoading] = useState(() => cloudConfigured && (!initialWorkspaceProfile.name || !initialWorkspaceProfile.logoUrl))
+  const [workspaceProfileLoading, setWorkspaceProfileLoading] = useState(cloudConfigured)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [formInitial, setFormInitial] = useState<Concert | null>(null)
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
@@ -1504,9 +1554,12 @@ export default function App() {
         if (active) {
           setWorkspaceName(profile.name)
           setWorkspaceLogo(profile.logoUrl)
+          setOnboardingComplete(profile.onboardingComplete ?? false)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (active) setOnboardingComplete((current) => current ?? false)
+      })
       .finally(() => {
         if (active) setWorkspaceProfileLoading(false)
       })
@@ -1658,6 +1711,18 @@ export default function App() {
       </Suspense>
     )
   if (cloudConfigured && !session) return <AuthScreen initialError={oauthError} />
+  if (cloudConfigured && session && workspaceProfileLoading) return <div className="loading-page">Preparant el teu espai…</div>
+  if (cloudConfigured && session && onboardingComplete === false)
+    return (
+      <OnboardingScreen
+        initialName={workspaceName}
+        onComplete={(name) => {
+          setWorkspaceName(name)
+          setOnboardingComplete(true)
+        }}
+        onSignOut={() => void supabase?.auth.signOut()}
+      />
+    )
 
   const selected = concerts.find((item) => item.id === selectedId)
   const sorted = [...concerts].sort((a, b) => a.date.localeCompare(b.date))
@@ -2051,6 +2116,12 @@ export default function App() {
               onWorkspaceLogoChange={setWorkspaceLogo}
               labelAgreement={labelAgreement}
               onLabelChange={setLabelAgreement}
+              accountEmail={session?.user.email || ''}
+              onAccountDeleted={() => {
+                setDataSessionOwner()
+                setSession(null)
+                void supabase?.auth.signOut({ scope: 'local' })
+              }}
             />
           ) : null}
           {screen === 'assistant' && labelReady ? (

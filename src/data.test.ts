@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountStorageKey, activeResources, backupVersion, isConcertOwnedFile, isSongOwnedFile, validateBackup } from './data'
+import { accountStorageKey, activeResources, backupVersion, clearAccountLocalData, isConcertOwnedFile, isSongOwnedFile, validateBackup } from './data'
 import { newConcert, type SongVersion } from './model'
 
 describe('propietat dels fitxers d’un concert', () => {
@@ -19,6 +19,28 @@ describe('aïllament local entre comptes', () => {
     expect(accountStorageKey(cache, 'user-a')).not.toBe(accountStorageKey(cache, 'user-b'))
     expect(accountStorageKey(queue, 'user-a')).not.toBe(accountStorageKey(queue, 'user-b'))
     expect(accountStorageKey(cache, 'user-a')).toBe(accountStorageKey(cache, 'user-a'))
+  })
+
+  it('elimina només les dades locals del compte esborrat', () => {
+    const values = new Map([
+      [accountStorageKey('escena-demo-concerts-v1', 'user-a'), 'concerts-a'],
+      [accountStorageKey('escena-offline-queue-v1', 'user-a'), 'queue-a'],
+      [accountStorageKey('escena-demo-concerts-v1', 'user-b'), 'concerts-b'],
+      ['escena-theme', 'classic'],
+    ])
+    const storage = {
+      get length() { return values.size },
+      key(index: number) { return [...values.keys()][index] ?? null },
+      removeItem(key: string) { values.delete(key) },
+    }
+    const original = globalThis.localStorage
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
+    try {
+      clearAccountLocalData('user-a')
+      expect([...values.keys()]).toEqual([accountStorageKey('escena-demo-concerts-v1', 'user-b'), 'escena-theme'])
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: original })
+    }
   })
 })
 

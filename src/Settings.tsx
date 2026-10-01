@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Check, Download, ImagePlus, Palette, Save, Trash2, Upload } from 'lucide-react'
-import { cloudConfigured, exportBackup, importBackup, removeBandLogo, saveBandLabel, saveBandLogo, saveBandName, saveLocalBandLogo, validateBackup, type AppBackup } from './data'
+import { cloudConfigured, deleteCurrentAccount, exportBackup, importBackup, removeBandLogo, saveBandLabel, saveBandLogo, saveBandName, saveLocalBandLogo, validateBackup, type AppBackup } from './data'
 import { commissionRate, validateLabelAgreement, type LabelAgreement } from './model'
 
 export type ThemeId = 'classic' | 'live-stage' | 'club' | 'paper'
@@ -287,7 +287,59 @@ function LabelSettings({ agreement, onSaved }: { agreement: LabelAgreement | nul
   )
 }
 
-export default function Settings({ theme, onThemeChange, onImported, workspaceName, workspaceLogo, onWorkspaceNameChange, onWorkspaceLogoChange, labelAgreement, onLabelChange }: { theme: ThemeId; onThemeChange: (value: ThemeId) => void; onImported: () => void; workspaceName: string; workspaceLogo?: string; onWorkspaceNameChange: (name: string) => void; onWorkspaceLogoChange: (logo?: string) => void; labelAgreement: LabelAgreement | null; onLabelChange: (label: LabelAgreement | null) => void }) {
+function AccountDeletion({ email, onDeleted }: { email: string; onDeleted: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+  const [confirmation, setConfirmation] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+
+  async function removeAccount() {
+    if (confirmation.trim().toLocaleLowerCase() !== email.trim().toLocaleLowerCase()) return
+    setBusy(true)
+    setMessage('')
+    try {
+      await deleteCurrentAccount()
+      onDeleted()
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'No s’ha pogut eliminar el compte.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="settings-card danger-zone">
+      <div className="settings-card-heading">
+        <span className="section-index"><Trash2 size={16} /></span>
+        <div>
+          <h2>Eliminar el compte</h2>
+          <p>Elimina definitivament el compte, l’espai i totes les seves dades i fitxers de Supabase.</p>
+        </div>
+      </div>
+      {!confirming ? (
+        <button type="button" className="button danger-button" onClick={() => setConfirming(true)}>
+          <Trash2 size={15} /> Eliminar el meu compte
+        </button>
+      ) : (
+        <div className="account-delete-confirmation">
+          <p>Aquesta acció no es pot desfer. Abans pots exportar un backup. Per confirmar, escriu <strong>{email}</strong>.</p>
+          <label className="field">
+            Correu del compte
+            <input type="email" autoComplete="off" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+          </label>
+          {message ? <p className="backup-message" role="alert">{message}</p> : null}
+          <div className="backup-actions">
+            <button type="button" className="button button-secondary" disabled={busy} onClick={() => { setConfirming(false); setConfirmation(''); setMessage('') }}>Cancel·lar</button>
+            <button type="button" className="button danger-button" disabled={busy || confirmation.trim().toLocaleLowerCase() !== email.trim().toLocaleLowerCase()} onClick={() => void removeAccount()}>
+              <Trash2 size={15} /> {busy ? 'Eliminant…' : 'Eliminar-ho tot definitivament'}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+export default function Settings({ theme, onThemeChange, onImported, workspaceName, workspaceLogo, onWorkspaceNameChange, onWorkspaceLogoChange, labelAgreement, onLabelChange, accountEmail, onAccountDeleted }: { theme: ThemeId; onThemeChange: (value: ThemeId) => void; onImported: () => void; workspaceName: string; workspaceLogo?: string; onWorkspaceNameChange: (name: string) => void; onWorkspaceLogoChange: (logo?: string) => void; labelAgreement: LabelAgreement | null; onLabelChange: (label: LabelAgreement | null) => void; accountEmail: string; onAccountDeleted: () => void }) {
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null)
@@ -460,6 +512,7 @@ export default function Settings({ theme, onThemeChange, onImported, workspaceNa
         ) : null}
         <small className="backup-note">{cloudConfigured ? 'Amb Supabase, la importació actualitza o afegeix registres a la banda actual i conserva la resta. Inclou metadades de cançons, però no els àudios ni altres fitxers físics.' : 'En mode local, la importació substitueix les dades d’aquest navegador. Inclou cançons i versions, però no fitxers físics ni credencials.'}</small>
       </section>
+      {cloudConfigured && accountEmail ? <AccountDeletion email={accountEmail} onDeleted={onAccountDeleted} /> : null}
     </div>
   )
 }

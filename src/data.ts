@@ -34,6 +34,7 @@ const bandNameKey = 'escena-demo-band-name-v1'
 const bandLogoKey = 'escena-demo-band-logo-v1'
 const bandLogoUrlCacheKey = 'escena-band-logo-url-v1'
 const bandLabelKey = 'escena-band-label-v1'
+const bandOnboardingKey = 'escena-band-onboarding-v1'
 const songProjectsKey = 'escena-song-projects-v1'
 const songVersionsKey = 'escena-song-versions-v1'
 const defaultBandName = 'La nostra banda'
@@ -184,28 +185,30 @@ export async function saveBandLabel(value: LabelAgreement | null): Promise<Label
   return label
 }
 
-export interface BandProfile { name: string; logoUrl?: string }
+export interface BandProfile { name: string; logoUrl?: string; onboardingComplete?: boolean }
 
 export function getCachedBandProfile(): BandProfile {
   try {
     const name = localGet(bandNameKey) || (supabase ? '' : defaultBandName)
-    if (!supabase) return { name: name || defaultBandName, logoUrl: localGet(bandLogoKey) || undefined }
+    if (!supabase) return { name: name || defaultBandName, logoUrl: localGet(bandLogoKey) || undefined, onboardingComplete: true }
     const cached = JSON.parse(localGet(bandLogoUrlCacheKey) || 'null') as { url?: string; expiresAt?: number } | null
-    return { name, logoUrl: cached?.expiresAt && cached.expiresAt > Date.now() + 30_000 ? cached.url : undefined }
-  } catch { return { name: supabase ? '' : defaultBandName } }
+    const onboarding = localGet(bandOnboardingKey)
+    return { name, logoUrl: cached?.expiresAt && cached.expiresAt > Date.now() + 30_000 ? cached.url : undefined, onboardingComplete: onboarding === null ? undefined : onboarding === 'true' }
+  } catch { return { name: supabase ? '' : defaultBandName, onboardingComplete: supabase ? undefined : true } }
 }
 
 export async function getBandProfile(): Promise<BandProfile> {
   const name = await getBandName()
-  if (!supabase) return { name, logoUrl: localGet(bandLogoKey) || undefined }
-  if (offline()) return { name, logoUrl: getCachedBandProfile().logoUrl }
-  const { data, error } = await supabase.from('bands').select('logo_path').eq('id', await bandId()).single()
-  if (error) return { name }
-  if (!data.logo_path) return { name }
+  if (!supabase) return { name, logoUrl: localGet(bandLogoKey) || undefined, onboardingComplete: true }
+  if (offline()) return { name, logoUrl: getCachedBandProfile().logoUrl, onboardingComplete: getCachedBandProfile().onboardingComplete }
+  const { data, error } = await supabase.from('bands').select('logo_path,onboarding_completed').eq('id', await bandId()).single()
+  if (error) throw error
+  localSet(bandOnboardingKey, String(data.onboarding_completed))
+  if (!data.logo_path) return { name, onboardingComplete: data.onboarding_completed }
   const { data: signed, error: signedError } = await supabase.storage.from('band-assets').createSignedUrl(data.logo_path, 60 * 60)
-  if (signedError) return { name }
+  if (signedError) return { name, onboardingComplete: data.onboarding_completed }
   localSet(bandLogoUrlCacheKey, JSON.stringify({ url: signed.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 }))
-  return { name, logoUrl: signed.signedUrl }
+  return { name, logoUrl: signed.signedUrl, onboardingComplete: data.onboarding_completed }
 }
 
 export function saveLocalBandLogo(dataUrl: string): string {
@@ -256,6 +259,38 @@ export async function saveBandName(value: string): Promise<string> {
   if (error) throw error
   localSet(bandNameKey, name)
   return name
+}
+
+export async function completeBandOnboarding(value: string): Promise<string> {
+  const name = value.trim().replace(/\s+/g, ' ')
+  if (!name) throw new Error('Escriu el nom de la banda o artista.')
+  if (name.length > 80) throw new Error('El nom no pot superar els 80 caracters.')
+  if (!supabase) return saveBandName(name)
+  if (offline()) throw new Error('Connecta’t a internet per acabar de configurar l’espai.')
+  const { error } = await supabase.from('bands').update({ name, onboarding_completed: true }).eq('id', await bandId())
+  if (error) throw error
+  localSet(bandNameKey, name)
+  localSet(bandOnboardingKey, 'true')
+  return name
+}
+
+export function clearAccountLocalData(userId: string): void {
+  const suffix = `-account-${userId}`
+  for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+    const key = localStorage.key(index)
+    if (key?.endsWith(suffix)) localStorage.removeItem(key)
+  }
+}
+
+export async function deleteCurrentAccount(): Promise<void> {
+  if (!supabase) throw new Error('Aquesta opcio nomes esta disponible amb un compte compartit.')
+  if (offline()) throw new Error('Connecta’t a internet per eliminar el compte.')
+  const { data: auth } = await supabase.auth.getSession()
+  if (!auth.session) throw new Error('Cal iniciar sessio per eliminar el compte.')
+  const { data, error } = await supabase.functions.invoke('delete-account', { body: {} })
+  if (error) throw new Error('No s’ha pogut eliminar el compte. Torna-ho a provar.')
+  if (!data?.deleted) throw new Error(typeof data?.error === 'string' ? data.error : 'No s’ha pogut eliminar el compte.')
+  clearAccountLocalData(auth.session.user.id)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
