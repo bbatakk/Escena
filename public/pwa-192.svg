@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="42" fill="#182846"/><circle cx="96" cy="96" r="57" fill="#e9a87e"/><path fill="#182846" d="M106 48v69.5a25 25 0 1 1-12-21.6V67l49-15v43.5a25 25 0 1 1-12-21.6V38z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="192" height="192">
+  <title>Escena</title>
+  <rect width="512" height="512" rx="144" fill="#e9a87e" />
+  <path d="M302 110c12 0 22 10 22 24v190c0 33-30 61-68 73-37 12-72-2-72-31s31-56 67-59c11-1 21 0 29 3V134c0-14 10-24 22-24Z" fill="#26344d" />
+</svg>

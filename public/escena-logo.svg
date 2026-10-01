@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="160" fill="#e9a87e" />
-  <path d="M301 130v224" fill="none" stroke="#26344d" stroke-linecap="round" stroke-width="42" />
-  <ellipse cx="242" cy="365" rx="72" ry="46" transform="rotate(-20 242 365)" fill="#26344d" />
+  <title>Escena</title>
+  <desc>Nota musical de formes arrodonides sobre un fons pressec.</desc>
+  <rect width="512" height="512" rx="144" fill="#e9a87e" />
+  <path d="M302 110c12 0 22 10 22 24v190c0 33-30 61-68 73-37 12-72-2-72-31s31-56 67-59c11-1 21 0 29 3V134c0-14 10-24 22-24Z" fill="#26344d" />
 </svg>
