@@ -58,17 +58,24 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
   const [working, setWorking] = useState(false)
   const [message, setMessage] = useState(initialError)
 
+  const [messageType, setMessageType] = useState<'error' | 'success'>('error')
+
   async function signInWithGoogle() {
     if (!supabase) return
     setWorking(true)
     setMessage('')
+    setMessageType('error')
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: window.location.origin },
       })
-      if (error) setMessage(error.message)
+      if (error) {
+        setMessageType('error')
+        setMessage(error.message)
+      }
     } catch (cause) {
+      setMessageType('error')
       setMessage(cause instanceof Error ? cause.message : 'No s’ha pogut connectar amb Google. Torna-ho a provar.')
     } finally {
       setWorking(false)
@@ -80,6 +87,7 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
     if (!supabase) return
     setWorking(true)
     setMessage('')
+    setMessageType('error')
     try {
       const result = creating
         ? await supabase.auth.signUp({
@@ -88,9 +96,17 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
             options: { emailRedirectTo: window.location.origin },
           })
         : await supabase.auth.signInWithPassword({ email, password })
-      if (result.error) setMessage(result.error.message)
-      else if (creating && !result.data.session) setMessage('Comprova el correu per confirmar el compte i després entra.')
+      if (result.error) {
+        setMessageType('error')
+        setMessage(result.error.message)
+      } else if (creating && !result.data.session) {
+        setMessageType('success')
+        setMessage('Compte creat correctament. Comprova el correu per confirmar-lo i després entra.')
+      } else {
+        setMessage('')
+      }
     } catch (cause) {
+      setMessageType('error')
       setMessage(cause instanceof Error ? cause.message : 'No s’ha pogut connectar. Comprova la connexió i torna-ho a provar.')
     } finally {
       setWorking(false)
@@ -129,7 +145,7 @@ function AuthScreen({ initialError = '' }: { initialError?: string }) {
             Contrasenya <input type="password" required minLength={6} autoComplete={creating ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
           {message ? (
-            <p role="alert" className="auth-message">
+            <p role={messageType === 'error' ? 'alert' : 'status'} className={`auth-message ${messageType === 'success' ? 'success' : ''}`}>
               {message}
             </p>
           ) : null}
