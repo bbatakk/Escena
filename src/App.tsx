@@ -1329,6 +1329,7 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
                                 <Check size={14} />
                               </span>
                               <strong>{item.name || 'Material sense nom'}</strong>
+                              <span className="material-quantity">{item.quantity ?? 1} u.</span>
                             </button>
                           ))}
                       </div>

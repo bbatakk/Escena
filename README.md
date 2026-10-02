@@ -63,6 +63,8 @@ Sense comptes/configuració a Supabase i Vercel, el projecte no es pot publicar 
 
 ## Verificació
 
+**Quantitat de material:** executa `supabase/migrations/202610020001_material_quantity.sql` abans de publicar aquesta versió. Afegeix la quantitat al catàleg amb valor inicial 1. En copiar material a un concert, la quantitat es conserva i es pot ajustar per a aquella càrrega sense modificar el catàleg ni altres concerts. Marcar-lo com a carregat confirma totes les unitats de la fila.
+
 ```bash
 npm run test
 npm run build

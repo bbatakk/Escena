@@ -60,6 +60,18 @@ describe('validació de backups', () => {
     expect(validateBackup(emptyBackup)).toBe(true)
   })
 
+  it('accepta quantitats de material i conserva la compatibilitat amb backups antics', () => {
+    const material = { id: 'mic', name: 'Micròfon', category: 'So', active: true }
+    const concert = { ...newConcert(), date: '2026-10-05' }
+    const withQuantity = { ...emptyBackup, materials: [{ ...material, quantity: 4 }], concerts: [{ ...concert, details: { ...concert.details, materials: [{ ...material, quantity: 2, loaded: false }] } }] }
+    expect(validateBackup(withQuantity)).toBe(true)
+    expect(validateBackup({ ...emptyBackup, materials: [material], concerts: [{ ...concert, details: { ...concert.details, materials: [{ ...material, loaded: false }] } }] })).toBe(true)
+    for (const quantity of [0, -1, 1.5, 2147483648, '2', null]) {
+      expect(validateBackup({ ...emptyBackup, materials: [{ ...material, quantity }] })).toBe(false)
+      expect(validateBackup({ ...emptyBackup, concerts: [{ ...concert, details: { ...concert.details, materials: [{ ...material, quantity, loaded: false }] } }] })).toBe(false)
+    }
+  })
+
   it('rebutja la versió desconeguda i registres mal formats', () => {
     expect(validateBackup({ ...emptyBackup, version: backupVersion + 1 })).toBe(false)
     expect(validateBackup({ ...emptyBackup, merchSales: [{ id: 'sale' }] })).toBe(false)

@@ -195,13 +195,18 @@ export interface MaterialItem {
   id: string
   name: string
   loaded: boolean
+  quantity?: number
   catalogId?: string
   category?: string
 }
 
 export type PersonKind = 'musica' | 'tecnic' | 'manager' | 'contacte'
 export interface BandPerson { id: string; name: string; kind: PersonKind; phone: string; email: string; active: boolean }
-export interface BandMaterial { id: string; name: string; category: string; active: boolean }
+export interface BandMaterial { id: string; name: string; category: string; quantity?: number; active: boolean }
+
+export function validMaterialQuantity(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 2147483647
+}
 export interface SetlistTemplate { id: string; name: string; songs: string[]; active: boolean }
 
 export interface ConcertDetails {

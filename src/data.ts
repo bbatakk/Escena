@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { concertSettlement, createId, generatedTreasuryMovements, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate, type SongProject, type SongShare, type SongVersion, emptyDetails, validateLabelAgreement } from './model'
+import { concertSettlement, createId, generatedTreasuryMovements, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MoneyMovement, type MerchProduct, type MerchSale, type SetlistTemplate, type SongProject, type SongShare, type SongVersion, emptyDetails, validateLabelAgreement, validMaterialQuantity } from './model'
 import { createSongShareToken, hashSongShareToken } from './songShares'
 
 const url = import.meta.env.VITE_SUPABASE_URL
@@ -113,7 +113,7 @@ export function validateBackup(value: unknown): value is AppBackup {
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === item
   }
   const validDocument = (item: unknown) => isRecord(item) && hasId(item) && typeof item.name === 'string' && typeof item.url === 'string' && (item.direction === 'enviar' || item.direction === 'rebre') && (item.status === 'pendent' || item.status === 'fet' || item.status === 'no_cal') && (item.storagePath === undefined || typeof item.storagePath === 'string') && (item.fileName === undefined || typeof item.fileName === 'string')
-  const validConcertMaterial = (item: unknown) => isRecord(item) && hasId(item) && typeof item.name === 'string' && typeof item.loaded === 'boolean' && (item.category === undefined || typeof item.category === 'string')
+  const validConcertMaterial = (item: unknown) => isRecord(item) && hasId(item) && typeof item.name === 'string' && typeof item.loaded === 'boolean' && (item.category === undefined || typeof item.category === 'string') && (item.quantity === undefined || validMaterialQuantity(item.quantity))
   const validScheduleItem = (item: unknown) => isRecord(item) && hasId(item) && ['time', 'label', 'place', 'kind'].every((key) => item[key] === undefined || typeof item[key] === 'string')
   const validBackupUrl = (item: unknown) => {
     if (item === '') return true
@@ -134,7 +134,7 @@ export function validateBackup(value: unknown): value is AppBackup {
     && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && nonNegative(item.price) && Number.isSafeInteger(item.stock) && nonNegative(item.stock) && (item.active === undefined || typeof item.active === 'boolean') && item.imageUrl === undefined && (item.imageDataUrl === undefined || (typeof item.imageDataUrl === 'string' && /^data:image\/(?:webp|png|jpeg);base64,/.test(item.imageDataUrl) && item.imageDataUrl.length <= 7 * 1024 * 1024)) && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && Number.isSafeInteger(size.stock) && nonNegative(size.stock)))))
     && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && nonNegative(item.unitPrice) && (item.note === undefined || typeof item.note === 'string') && (item.size === undefined || typeof item.size === 'string') && (item.paymentMethod === undefined || item.paymentMethod === 'card' || item.paymentMethod === 'cash'))
     && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean'))
-    && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && (item.category === undefined || typeof item.category === 'string'))
+    && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && (item.category === undefined || typeof item.category === 'string') && (item.quantity === undefined || validMaterialQuantity(item.quantity)))
     && Array.isArray(backup.setlists) && backup.setlists.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && Array.isArray(item.songs) && item.songs.every((song) => typeof song === 'string'))
     && (backup.version === 1 ? (backup.songProjects === undefined && backup.songVersions === undefined) || validSongData : validSongData)
 }
@@ -503,7 +503,7 @@ function canonicalOfflineValue(entity: OfflineDataEntity, value: unknown, table?
     const resource = value.value && isRecord(value.value) ? value.value : value
     const resourceTable = table || (typeof value.table === 'string' ? value.table as ResourceTable : undefined)
     if (resourceTable === 'band_people') return { id: resource.id, name: resource.name, kind: resource.kind, phone: resource.phone || '', email: resource.email || '', active: resource.active }
-    if (resourceTable === 'band_materials') return { id: resource.id, name: resource.name, category: resource.category || '', active: resource.active }
+    if (resourceTable === 'band_materials') return { id: resource.id, name: resource.name, category: resource.category || '', quantity: resource.quantity ?? 1, active: resource.active }
     if (resourceTable === 'setlist_templates') return { id: resource.id, name: resource.name, songs: resource.songs || [], active: resource.active }
   }
   return value
@@ -1454,12 +1454,17 @@ export async function listAllResources<T extends Resource>(table: ResourceTable)
 }
 
 export async function saveResource<T extends Resource>(table: ResourceTable, resource: T): Promise<T> {
+  if (table === 'band_materials') {
+    const quantity = (resource as BandMaterial).quantity ?? 1
+    if (!validMaterialQuantity(quantity)) throw new Error('La quantitat ha de ser un nombre enter positiu.')
+    resource = { ...resource, quantity }
+  }
   if (!supabase) { const all = readCache<T>(resourceKeys[table]); const next = [...all.filter((item) => item.id !== resource.id), resource]; writeCache(resourceKeys[table], next); return resource }
   if (offline()) { const all = readCache<T>(resourceKeys[table]); const previous = all.find((item) => item.id === resource.id) ?? null; writeCache(resourceKeys[table], [...all.filter((item) => item.id !== resource.id), resource]); queueData('resource', 'save', { id: resource.id, table, value: resource }, previous, true); return resource }
   const values = table === 'band_people'
     ? { id: resource.id, band_id: await bandId(), name: (resource as BandPerson).name, kind: (resource as BandPerson).kind, phone: (resource as BandPerson).phone, email: (resource as BandPerson).email, active: resource.active }
     : table === 'band_materials'
-      ? { id: resource.id, band_id: await bandId(), name: (resource as BandMaterial).name, category: (resource as BandMaterial).category, active: resource.active }
+      ? { id: resource.id, band_id: await bandId(), name: (resource as BandMaterial).name, category: (resource as BandMaterial).category, quantity: (resource as BandMaterial).quantity, active: resource.active }
       : { id: resource.id, band_id: await bandId(), name: (resource as SetlistTemplate).name, songs: (resource as SetlistTemplate).songs, active: resource.active }
   const { data, error } = await (supabase as any).from(table).upsert(values).select('*').single() as { data: T | null; error: Error | null }
   if (error) throw error
