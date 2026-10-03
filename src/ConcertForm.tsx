@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
-import ConcertTeamFees from './ConcertTeamFees'
+import ConcertTeamFees, { TeamFeesClosing } from './ConcertTeamFees'
 import { selectConcertPeople } from './model'
 import { dataStorageKey, listBandDocuments, listResource } from './data'
 import { concertSettlement, createId, formatMoney, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type LabelAgreement, type MoneyMovementPaymentMethod, type SetlistTemplate, statusLabels } from './model'
@@ -253,8 +253,9 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
                <div className="fields two-col closing-payment-grid">
                  <div className="closing-payment-group"><label className="field">Catxet cobrat (€) <input type="number" min="0" step="0.01" value={concert.feePaid} onChange={(e) => setField('feePaid', Number(e.target.value))} /></label><label className="field">Compte del catxet <select value={d.feePaymentMethod || 'bank'} onChange={(e) => setDetail('feePaymentMethod', e.target.value as MoneyMovementPaymentMethod)}><option value="bank">Compte bancari</option><option value="cash">Efectiu</option></select></label></div>
                  <div className="closing-payment-group"><label className="field">Despeses (€) <input type="number" min="0" step="0.01" value={d.expenses} onChange={(e) => setDetail('expenses', Number(e.target.value))} /></label><label className="field">Compte de les despeses <select value={d.expensePaymentMethod || 'bank'} onChange={(e) => setDetail('expensePaymentMethod', e.target.value as MoneyMovementPaymentMethod)}><option value="bank">Compte bancari</option><option value="cash">Efectiu</option></select></label></div>
-                 <label className="field field-span">Notes i incidències <textarea rows={3} value={d.notes} onChange={(e) => setDetail('notes', e.target.value)} /></label>
-               </div>
+                  <label className="field field-span">Notes i incidències <textarea rows={3} value={d.notes} onChange={(e) => setDetail('notes', e.target.value)} /></label>
+                </div>
+                <TeamFeesClosing concert={concert} onChange={(fees) => setDetail('teamFees', fees)} />
            </section>
         </div>
         <div className="form-actions">{error ? <p className="form-error" role="alert">{error}</p> : null}{draftSaved ? <small className="draft-saved-note" role="status">Esborrany desat en aquest dispositiu</small> : null}{initialDraft ? <small className="draft-recovered-note" role="status">Hem recuperat un esborrany anterior.</small> : null}<button type="button" className="button button-secondary" onClick={cancelForm}>Cancel·lar</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? 'Desant…' : 'Desar concert'}</button></div>

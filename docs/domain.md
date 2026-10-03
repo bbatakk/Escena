@@ -14,6 +14,8 @@ Els honoraris per trams es recalculen sobre el final o l’acordat, mai sobre un
 
 Les liquidacions de l’equip porten UUID, import, data, pagador i compte. Les pagades per la banda generen moviments `team_payment` individuals de despesa; les pagades pel gestor i descomptades del cobrament redueixen l’ingrés de catxet sense crear una segona despesa. «Catxet cobrat» sempre significa brut liquidat abans de comissió i d’aquests descomptes. No duplicar honoraris en despeses resumides ni moviments manuals. Les despeses reals independents no s’adapten al catxet.
 
+A «Tancament», l’acció «Descomptar … del cobrament» registra una liquidació del gestor per l’import pendent de cada persona, calculat amb el catxet final/acordat i restant totes les liquidacions anteriors. Cal haver indicat un cobrament brut i la data de liquidació. No genera duplicats en tornar a desar ni converteix honoraris previstos en pagaments sense aquesta acció explícita. Les liquidacions parcials o mixtes es poden editar a «Honoraris de l’equip».
+
 Estats del concert: **en converses → reservat → confirmat → realitzat**, amb **cancel·lat** com a sortida possible. L'usuari tria l'estat; «realitzat» no implica «cobrat».
 
 Sopar/allotjament: **pendent de saber / sí / no**. Un «sí» al sopar compta com a confirmat sense exigir detalls. L’allotjament «sí» necessita adreça per considerar-se concretat; un «no» no és un pendent. Documents: direcció **enviar/rebre** i estat **pendent/fet/no cal**. L'enllaç, quan existeix, és a un fitxer allotjat en un servei extern; «fet» és una confirmació de la banda, no una comprovació automàtica de lliurament.

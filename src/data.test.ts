@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { accountStorageKey, activeResources, backupVersion, clearAccountLocalData, isConcertOwnedFile, isSongOwnedFile, validateBackup } from './data'
-import { createId, newConcert, selectConcertPeople, type BandPerson, type SongVersion } from './model'
+import { createId, moneyMovementBalance, newConcert, selectConcertPeople, settleTeamFeeWithManager, type BandPerson, type SongVersion } from './model'
 import { deleteConcert, exportBackup, listMoneyMovements, listResource, saveConcert, saveResource } from './data'
 
 describe('propietat dels fitxers d’un concert', () => {
@@ -72,6 +72,16 @@ describe('persistència econòmica del concert', () => {
       const payments = (await listMoneyMovements()).filter((movement) => movement.sourceType === 'team_payment')
       expect(payments).toHaveLength(1)
       expect(payments[0]).toMatchObject({ amount: 100, date: '2026-10-04', paymentMethod: 'cash' })
+      concert.details.management = 'discografica'
+      concert.details.labelAgreement = { name: 'Segell', tiers: [{ above: 0, percent: 20 }] }
+      concert.details.teamFees = settleTeamFeeWithManager(concert, person.id, '2026-10-04')
+      await saveConcert(concert)
+      await saveConcert(concert)
+      const movements = (await listMoneyMovements()).filter((movement) => movement.concertId === concert.id)
+      expect(movements.filter((movement) => movement.sourceType === 'concert_fee')).toHaveLength(1)
+      expect(movements.find((movement) => movement.sourceType === 'concert_fee')?.amount).toBe(350)
+      expect(movements.filter((movement) => movement.sourceType === 'team_payment')).toHaveLength(1)
+      expect(moneyMovementBalance(movements)).toBe(250)
       const backup = await exportBackup()
       expect(validateBackup(backup)).toBe(true)
       expect(backup.money.some((movement) => movement.sourceType === 'team_payment')).toBe(false)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createId, personFeeAmount, selectConcertPeople, teamFeeSummary, validConcertEconomics, validPersonFeeAgreement, type BandPerson, type PersonFeeAgreement } from './model'
+import { createId, personFeeAmount, selectConcertPeople, settleTeamFeeWithManager, teamFeeSummary, validConcertEconomics, validPersonFeeAgreement, type BandPerson, type PersonFeeAgreement } from './model'
 import { commissionRate, concertClosingSummary, concertSettlement, generatedTreasuryMovements, getPending, merchRevenueByConcert, moneyMovementBalance, newConcert, posterConcerts, totalMerchRevenue, totalNetConcertFees, validateLabelAgreement, type MoneyMovement } from './model'
 
 describe('discogràfica i liquidació del catxet', () => {
@@ -102,6 +102,41 @@ describe('catxet final i honoraris de l’equip', () => {
     concert.details.teamFees![0].payments = []
     concert.details.finalFee = 100.001
     expect(validConcertEconomics(concert)).toBe(false)
+  })
+  it('descompta al tancament el tram del tècnic a més de la comissió, sense duplicar-lo', () => {
+    const concert = concertWithTeam()
+    concert.feePaid = 1000
+    concert.details.management = 'discografica'
+    concert.details.labelAgreement = { name: 'Segell', tiers: [{ above: 0, percent: 20 }] }
+    expect(concertSettlement(concert)).toMatchObject({ projectedNet: 600, netPaid: 800 })
+    concert.details.teamFees = settleTeamFeeWithManager(concert, person.id, '2026-10-03')
+    const payment = concert.details.teamFees[0].payments[0]
+    expect(payment).toMatchObject({ amount: 200, payer: 'manager', date: '2026-10-03' })
+    expect(validConcertEconomics(concert)).toBe(true)
+    expect(concertSettlement(concert)).toMatchObject({ projectedNet: 600, netPaid: 600 })
+    expect(moneyMovementBalance(generatedTreasuryMovements([concert], null, []))).toBe(600)
+    expect(generatedTreasuryMovements([concert], null, []).some((item) => item.sourceType === 'team_payment')).toBe(false)
+    concert.details.teamFees = settleTeamFeeWithManager(concert, person.id, '2026-10-04')
+    expect(concert.details.teamFees[0].payments).toEqual([payment])
+  })
+  it('liquida només el pendent amb el tram final i conserva pagaments parcials o excessius', () => {
+    const concert = concertWithTeam()
+    concert.details.finalFee = 500
+    concert.feePaid = 500
+    const partial = { id: createId(), date: '2026-10-02', amount: 75, payer: 'band' as const, paymentMethod: 'cash' as const }
+    concert.details.teamFees![0].payments = [partial]
+    concert.details.teamFees = settleTeamFeeWithManager(concert, person.id, '2026-10-03')
+    expect(concert.details.teamFees[0].payments).toEqual([partial, expect.objectContaining({ amount: 75, payer: 'manager' })])
+    expect(teamFeeSummary(concert).rows[0].remaining).toBe(0)
+    expect(moneyMovementBalance(generatedTreasuryMovements([concert], null, []))).toBe(350)
+    const payments = concert.details.teamFees[0].payments
+    concert.details.teamFees[0].agreement = { kind: 'fixed', amount: 50 }
+    concert.details.teamFees = settleTeamFeeWithManager(concert, person.id, '2026-10-04')
+    expect(concert.details.teamFees[0].payments).toEqual(payments)
+    concert.details.teamFees[0].agreement = tariff
+    concert.details.finalFee = 499
+    concert.details.teamFees = settleTeamFeeWithManager(concert, person.id, '2026-10-04')
+    expect(concert.details.teamFees[0].payments).toEqual(payments)
   })
 })
 
