@@ -81,6 +81,16 @@ export function teamFeeSummary(concert: Concert) {
   }
 }
 
+export function settleTeamFeeWithManager(concert: Concert, personId: string, date: string): ConcertTeamFee[] {
+  const remaining = teamFeeSummary(concert).rows.find((fee) => fee.personId === personId)?.remaining
+  const fees = concert.details.teamFees ?? []
+  if (remaining === undefined || remaining === null || remaining <= 0) return fees
+  return fees.map((fee) => fee.personId === personId ? {
+    ...fee,
+    payments: [...fee.payments, { id: createId(), amount: remaining, date, payer: 'manager', paymentMethod: concert.details.feePaymentMethod || 'bank' }],
+  } : fee)
+}
+
 export function concertSettlement(concert: Concert, currentLabel?: LabelAgreement | null) {
   const grossAgreed = Math.max(0, concert.feeAmount)
   const grossPaid = Math.max(0, concert.feePaid)

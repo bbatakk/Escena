@@ -1,6 +1,31 @@
+import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import PersonFeeEditor from './PersonFeeEditor'
-import { createId, formatMoney, teamFeeSummary, type BandPerson, type Concert, type ConcertTeamFee } from './model'
+import { createId, formatMoney, settleTeamFeeWithManager, teamFeeSummary, type BandPerson, type Concert, type ConcertTeamFee } from './model'
+
+export function TeamFeesClosing({ concert, onChange }: { concert: Concert; onChange: (fees: ConcertTeamFee[]) => void }) {
+  const summary = teamFeeSummary(concert)
+  const [date, setDate] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
+  if (!summary.rows.length) return null
+  const pending = summary.rows.filter((fee) => fee.remaining !== null && fee.remaining > 0)
+  return <div className="team-fees-closing">
+    <h3>Honoraris al tancament</h3>
+    <p className="label-concert-note">Si {concert.details.labelAgreement?.name || 'el gestor'} paga l’equip i en descompta els honoraris, registra’ls aquí abans de desar. Tresoreria rebrà el catxet menys la comissió i aquests honoraris. Els imports previstos encara no liquidats no es resten del saldo.</p>
+    {pending.length ? <>
+      <label className="field">Data de la liquidació d’honoraris<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+      {pending.map((fee) => <div className="team-fee-summary" key={fee.personId}>
+        <strong>{fee.name} · {formatMoney(fee.remaining!)} pendents</strong>
+        <button type="button" className="button button-secondary" disabled={!date || concert.feePaid <= 0} onClick={() => onChange(settleTeamFeeWithManager(concert, fee.personId, date))}>Descomptar {formatMoney(fee.remaining!)} del cobrament</button>
+      </div>)}
+      {concert.feePaid <= 0 ? <p className="label-concert-note">Indica el catxet brut cobrat per registrar el descompte.</p> : null}
+    </> : null}
+    {summary.unresolved ? <p className="label-concert-note">Hi ha honoraris per concretar: ajusta’n el tram o l’import a «Honoraris de l’equip».</p> : null}
+    <p className="label-concert-note" role="status">Descomptat pel gestor: {formatMoney(summary.managerPaid)} · Pagat per la banda: {formatMoney(summary.bandPaid)}. Pots revisar o corregir les liquidacions a «Honoraris de l’equip».</p>
+  </div>
+}
 
 export function TeamFeesSummary({ concert }: { concert: Concert }) {
   const summary = teamFeeSummary(concert)
