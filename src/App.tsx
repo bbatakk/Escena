@@ -7,6 +7,7 @@ import { cloudConfigured, completeBandOnboarding, dataStorageKey, deleteConcert,
 import { concertClosingSummary, concertSettlement, createId, type BandPerson, type Concert, formatDate, formatMoney, getPending, newConcert, statusLabels, type LabelAgreement, type MerchProduct, type MerchSale, type MoneyMovement, type SetlistTemplate } from './model'
 import Settings, { themeClass, type ThemeId } from './Settings'
 import { useDialogFocus } from './useDialogFocus'
+import { TeamFeesSummary } from './ConcertTeamFees'
 
 const BandLibrary = lazy(() => import('./BandLibrary'))
 const Treasury = lazy(() => import('./Treasury'))
@@ -1064,13 +1065,16 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
               <div className="info-rows">
                 <InfoRow label="Gestionat per">{d.management === 'discografica' ? d.labelAgreement?.name || 'Discogràfica sense condicions' : d.management === 'banda' ? 'La banda' : 'Per concretar'}</InfoRow>
                 <InfoRow label="Catxet acordat (brut)">{formatMoney(concert.feeAmount)}</InfoRow>
+                <InfoRow label="Catxet final (brut)">{d.finalFee === undefined ? 'Sense canvi concretat; es fa servir l’acordat' : formatMoney(d.finalFee)}</InfoRow>
                 <InfoRow label="Catxet cobrat (brut)">{formatMoney(concert.feePaid)}</InfoRow>
                 {settlement.unresolved ? (
                   <p className="label-concert-note">Indica qui ha gestionat el concert per calcular el net de la banda.</p>
                 ) : (
                   <>
                     <InfoRow label="Comissió prevista">{formatMoney(settlement.projectedCommission)}</InfoRow>
-                    <InfoRow label="Net previst">{formatMoney(settlement.projectedNet)}</InfoRow>
+                    <InfoRow label="Previsió inicial">{formatMoney(settlement.initialNet)}</InfoRow>
+                    <InfoRow label="Honoraris de l’equip">{formatMoney(settlement.teamTotal)}</InfoRow>
+                    <InfoRow label="Net previst">{settlement.teamUnresolved ? 'Honoraris per concretar' : formatMoney(settlement.projectedNet)}</InfoRow>
                     <InfoRow label="Comissió sobre el cobrat">
                       {formatMoney(settlement.paidCommission)}
                       {d.management === 'discografica' ? ` (${settlement.paidRate} %)` : ''}
@@ -1080,6 +1084,7 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
                 )}
                 {d.conditions ? <InfoRow label="Condicions">{d.conditions}</InfoRow> : null}
                 {d.cancellation ? <InfoRow label="Cancel·lació">{d.cancellation}</InfoRow> : null}
+                <TeamFeesSummary concert={concert} />
               </div>
             </section>
 
@@ -1256,6 +1261,8 @@ function Detail({ concert, labelAgreement, onBack, onEdit, onDelete, onToggle, o
                 <InfoRow label="Catxet net cobrat">{settlement.unresolved ? 'Pendent de classificar' : formatMoney(closing.netFee)}</InfoRow>
                 <InfoRow label={closing.usesDetailedSales ? 'Marxandatge venut' : 'Marxandatge (resum antic)'}>{formatMoney(closing.merchRevenue)}</InfoRow>
                 <InfoRow label="Altres ingressos reals">{formatMoney(closing.manualIncome)}</InfoRow>
+                <InfoRow label="Honoraris pagats per la banda">{formatMoney(closing.teamExpenses)}</InfoRow>
+                <InfoRow label="Honoraris descomptats pel gestor">{formatMoney(settlement.managerPaid)} (ja descomptats del catxet net)</InfoRow>
                 <InfoRow label={concertExpenseMovements.length ? 'Despeses registrades' : 'Despeses (resum antic)'}>{formatMoney(closing.manualExpenses || closing.legacyExpenses)}</InfoRow>
               </div>
               {closing.usesDetailedSales && d.merchSales > 0 ? <small className="closing-legacy-note">El resum antic de vendes no se suma perquè ja hi ha vendes detallades.</small> : null}

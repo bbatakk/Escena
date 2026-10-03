@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import ConcertTeamFees from './ConcertTeamFees'
+import { selectConcertPeople } from './model'
 import { dataStorageKey, listBandDocuments, listResource } from './data'
 import { concertSettlement, createId, formatMoney, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type LabelAgreement, type MoneyMovementPaymentMethod, type SetlistTemplate, statusLabels } from './model'
 
@@ -91,7 +93,9 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
     setSelectedLibraryId('')
   }
 
-  function togglePerson(id: string) { setDetail('personIds', d.personIds.includes(id) ? d.personIds.filter((item) => item !== id) : [...d.personIds, id]) }
+  function togglePerson(id: string) {
+    setConcert((previous) => ({ ...previous, details: selectConcertPeople(previous.details, previous.details.personIds.includes(id) ? previous.details.personIds.filter((item) => item !== id) : [...previous.details.personIds, id], people) }))
+  }
   function addMaterial(id: string) { const item = catalog.find((entry) => entry.id === id); if (!item || d.materials.some((entry) => entry.catalogId === id)) return; setDetail('materials', [...d.materials, { id: createId(), catalogId: id, name: item.name, category: item.category, quantity: item.quantity ?? 1, loaded: false }]) }
   function addMaterialCategory(category: string) { const selected = new Set(d.materials.map((item) => item.catalogId)); const additions = catalog.filter((item) => (item.category || 'Sense categoria') === category && !selected.has(item.id)).map((item) => ({ id: createId(), catalogId: item.id, name: item.name, category: item.category, quantity: item.quantity ?? 1, loaded: false })); if (additions.length) setDetail('materials', [...d.materials, ...additions]) }
   function applySetlist(id: string) { const item = setlists.find((entry) => entry.id === id); if (item) { setDetail('setlist', item.songs.join('\n')); setDetail('setlistTemplateId', id) } }
@@ -158,10 +162,12 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
             <div className="section-heading"><span className="section-index">02</span><div><h2>Acord</h2><p>Què s'ha pactat amb l'organització.</p></div></div>
             <div className="fields">
               <label className="field">Catxet acordat (€) <input type="number" min="0" step="0.01" value={concert.feeAmount} onChange={(e) => setField('feeAmount', Number(e.target.value))} /></label>
+              <label className="field">Catxet final brut (€) <input type="number" min="0" step="0.01" value={d.finalFee ?? ''} onChange={(e) => setDetail('finalFee', e.target.value === '' ? undefined : Number(e.target.value))} placeholder="Si no ha canviat, deixa’l buit" /></label>
+              <p className="label-concert-note">L’acordat conserva el pacte inicial. El final determina els trams de comissió i honoraris; si és buit, es fa servir l’acordat.</p>
               <label className="field">Gestionat per <select value={d.management || 'pendent'} onChange={(e) => setManagement(e.target.value as 'pendent' | 'banda' | 'discografica')}><option value="pendent">Per concretar</option><option value="banda">La banda</option>{labelAgreement || d.labelAgreement ? <option value="discografica">Discogràfica</option> : null}</select></label>
               {d.management === 'discografica' && d.labelAgreement ? <p className="label-concert-note">{d.labelAgreement.name} · Condicions guardades per a aquest concert. Els canvis a Configuració no l’afecten.</p> : null}
               {d.management === 'discografica' && !d.labelAgreement ? <p className="form-error">Configura primer els trams de la discogràfica.</p> : null}
-              {!settlement.unresolved && concert.feeAmount > 0 ? <div className="label-concert-summary"><span>Net previst per a la banda</span><strong>{formatMoney(settlement.projectedNet)}</strong><small>Comissió prevista: {formatMoney(settlement.projectedCommission)}. El tram definitiu depèn del total cobrat.</small></div> : null}
+              {!settlement.unresolved ? <div className="label-concert-summary"><span>{d.finalFee === undefined ? 'Previsió per a la banda' : 'Liquidació prevista per a la banda'}</span><strong>{settlement.teamUnresolved ? 'Honoraris per concretar' : formatMoney(settlement.projectedNet)}</strong><small>Comissió: {formatMoney(settlement.projectedCommission)} · Honoraris: {formatMoney(settlement.teamTotal)}. Abans d’altres despeses. Previsió inicial: {formatMoney(settlement.initialNet)}.</small></div> : null}
               <label className="field">Condicions <textarea rows={3} value={d.conditions} onChange={(e) => setDetail('conditions', e.target.value)} placeholder="Despeses cobertes, forma de pagament..." /></label>
               <label className="field">Condicions de cancel·lació <textarea rows={2} value={d.cancellation} onChange={(e) => setDetail('cancellation', e.target.value)} /></label>
             </div>
@@ -177,7 +183,9 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
             </div>
           </section>
 
-          <section className="form-card wide-card">
+           <ConcertTeamFees concert={concert} people={people} onChange={(fees) => setDetail('teamFees', fees)} />
+
+           <section className="form-card wide-card">
             <div className="section-heading"><span className="section-index">04</span><div><h2>Horaris i desplaçament</h2><p>Els moments importants i com arribareu.</p></div></div>
             <div className="repeat-list">
               {d.schedule.map((item) => <div className="repeat-row schedule-row" key={item.id}>
@@ -240,7 +248,8 @@ export default function ConcertForm({ initial, onSave, onCancel, onDirtyChange, 
           </section>
 
            <section className="form-card wide-card dynamic-card">
-             <div className="section-heading"><span className="section-index">09</span><div><h2>Tancament</h2><p>Imports de resum d'aquest concert.</p></div></div>
+              <div className="section-heading"><span className="section-index">09</span><div><h2>Tancament</h2><p>Imports de resum d'aquest concert.</p></div></div>
+              <p className="label-concert-note">«Catxet cobrat» és el brut liquidat fins ara, incloses la comissió i les liquidacions descomptades pel gestor. Un cobrament parcial no canvia el catxet final. Ingrés atribuït a la banda: {settlement.unresolved ? 'pendent de classificar' : formatMoney(settlement.netPaid)}. No incloguis els honoraris de l’equip al resum de despeses.</p>
                <div className="fields two-col closing-payment-grid">
                  <div className="closing-payment-group"><label className="field">Catxet cobrat (€) <input type="number" min="0" step="0.01" value={concert.feePaid} onChange={(e) => setField('feePaid', Number(e.target.value))} /></label><label className="field">Compte del catxet <select value={d.feePaymentMethod || 'bank'} onChange={(e) => setDetail('feePaymentMethod', e.target.value as MoneyMovementPaymentMethod)}><option value="bank">Compte bancari</option><option value="cash">Efectiu</option></select></label></div>
                  <div className="closing-payment-group"><label className="field">Despeses (€) <input type="number" min="0" step="0.01" value={d.expenses} onChange={(e) => setDetail('expenses', Number(e.target.value))} /></label><label className="field">Compte de les despeses <select value={d.expensePaymentMethod || 'bank'} onChange={(e) => setDetail('expensePaymentMethod', e.target.value as MoneyMovementPaymentMethod)}><option value="bank">Compte bancari</option><option value="cash">Efectiu</option></select></label></div>

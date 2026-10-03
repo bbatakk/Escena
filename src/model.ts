@@ -18,18 +18,85 @@ export function commissionRate(amount: number, agreement: LabelAgreement): numbe
   return agreement.tiers.reduce((rate, tier) => amount > tier.above ? tier.percent : rate, 0)
 }
 
+export type PersonFeeAgreement = { kind: 'fixed'; amount: number } | { kind: 'tiers'; tiers: Array<{ from: number; amount: number }> }
+export interface TeamPayment { id: string; amount: number; date: string; payer: 'band' | 'manager'; paymentMethod: MoneyMovementPaymentMethod }
+export interface ConcertTeamFee { personId: string; name: string; agreement?: PersonFeeAgreement; payments: TeamPayment[] }
+
+export function validMoney(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 9999999999.99 && Math.abs(value * 100 - Math.round(value * 100)) < 1e-4
+}
+
+export function validPersonFeeAgreement(value: unknown): value is PersonFeeAgreement {
+  if (!value || typeof value !== 'object') return false
+  const agreement = value as PersonFeeAgreement
+  if (agreement.kind === 'fixed') return validMoney(agreement.amount)
+  return agreement.kind === 'tiers' && Array.isArray(agreement.tiers) && agreement.tiers.length > 0 && agreement.tiers.length <= 20
+    && agreement.tiers.every((tier, index) => tier && validMoney(tier.from) && validMoney(tier.amount) && (index === 0 || tier.from > agreement.tiers[index - 1].from))
+}
+
+export function personFeeAmount(agreement: PersonFeeAgreement | undefined, fee: number): number | null {
+  if (!agreement) return 0
+  if (agreement.kind === 'fixed') return agreement.amount
+  return agreement.tiers.reduce<number | null>((amount, tier) => fee >= tier.from ? tier.amount : amount, null)
+}
+
+export function effectiveConcertFee(concert: Concert): number { return concert.details.finalFee ?? concert.feeAmount }
+
+export function validConcertEconomics(concert: Concert): boolean {
+  if (!validMoney(concert.feeAmount) || !validMoney(concert.feePaid) || (concert.details.finalFee !== undefined && !validMoney(concert.details.finalFee))) return false
+  const fees = concert.details.teamFees ?? []
+  if (!Array.isArray(fees) || fees.length > 100 || new Set(fees.map((fee) => fee?.personId)).size !== fees.length) return false
+  const ids = new Set<string>()
+  return fees.every((fee) => fee && typeof fee.personId === 'string' && Boolean(fee.personId) && typeof fee.name === 'string' && Boolean(fee.name.trim())
+    && (fee.agreement === undefined || validPersonFeeAgreement(fee.agreement)) && Array.isArray(fee.payments) && fee.payments.length <= 100
+    && fee.payments.every((payment) => {
+      if (!payment || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payment.id) || ids.has(payment.id)
+        || !validMoney(payment.amount) || payment.amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(payment.date)
+        || Number.isNaN(Date.parse(payment.date)) || new Date(payment.date).toISOString().slice(0, 10) !== payment.date
+        || !['band', 'manager'].includes(payment.payer) || !['bank', 'cash'].includes(payment.paymentMethod)) return false
+      ids.add(payment.id)
+      return true
+    }))
+}
+
+export function selectConcertPeople(details: ConcertDetails, ids: string[], people: BandPerson[]): ConcertDetails {
+  const previous = details.teamFees ?? []
+  const retained = previous.filter((fee) => ids.includes(fee.personId) || fee.payments.length > 0)
+  const added = people.filter((person) => ids.includes(person.id) && !details.personIds.includes(person.id) && !retained.some((fee) => fee.personId === person.id) && person.feeAgreement)
+    .map((person) => ({ personId: person.id, name: person.name, agreement: structuredClone(person.feeAgreement), payments: [] }))
+  return { ...details, personIds: ids, teamFees: [...retained, ...added] }
+}
+
+export function teamFeeSummary(concert: Concert) {
+  const rows = (concert.details.teamFees ?? []).map((fee) => {
+    const amount = personFeeAmount(fee.agreement, effectiveConcertFee(concert))
+    const paid = fee.payments.reduce((sum, payment) => sum + payment.amount, 0)
+    return { ...fee, amount, paid, remaining: amount === null ? null : Math.round((amount - paid) * 100) / 100 }
+  })
+  return {
+    rows, unresolved: rows.some((fee) => fee.amount === null),
+    total: rows.reduce((sum, fee) => sum + (fee.amount ?? 0), 0),
+    bandPaid: rows.reduce((sum, fee) => sum + fee.payments.filter((payment) => payment.payer === 'band').reduce((subtotal, payment) => subtotal + payment.amount, 0), 0),
+    managerPaid: rows.reduce((sum, fee) => sum + fee.payments.filter((payment) => payment.payer === 'manager').reduce((subtotal, payment) => subtotal + payment.amount, 0), 0),
+  }
+}
+
 export function concertSettlement(concert: Concert, currentLabel?: LabelAgreement | null) {
   const grossAgreed = Math.max(0, concert.feeAmount)
   const grossPaid = Math.max(0, concert.feePaid)
+  const grossFinal = effectiveConcertFee(concert)
+  const team = teamFeeSummary(concert)
   const management = concert.details.management || 'pendent'
   const agreement = concert.details.labelAgreement
   const unresolved = management === 'discografica' && !agreement || management === 'pendent' && Boolean(currentLabel?.name)
-  if (unresolved) return { unresolved: true, grossAgreed, grossPaid, projectedCommission: 0, projectedNet: 0, paidCommission: 0, netPaid: 0, paidRate: 0 }
-  const projectedRate = management === 'discografica' && agreement ? commissionRate(grossAgreed, agreement) : 0
-  const paidRate = management === 'discografica' && agreement ? commissionRate(grossPaid, agreement) : 0
-  const projectedCommission = Math.round(grossAgreed * projectedRate) / 100
+  const paidRate = management === 'discografica' && agreement ? commissionRate(grossFinal, agreement) : 0
+  const initialRate = management === 'discografica' && agreement ? commissionRate(grossAgreed, agreement) : 0
+  const initialTeam = (concert.details.teamFees ?? []).reduce((sum, fee) => sum + (personFeeAmount(fee.agreement, grossAgreed) ?? 0), 0)
+  const initialNet = grossAgreed - Math.round(grossAgreed * initialRate) / 100 - initialTeam
+  if (unresolved) return { unresolved: true, grossAgreed, grossFinal, grossPaid, initialNet, teamUnresolved: team.unresolved, teamTotal: team.total, bandPaid: team.bandPaid, managerPaid: team.managerPaid, projectedCommission: 0, projectedNet: 0, paidCommission: 0, netPaid: 0, paidRate: 0 }
+  const projectedCommission = Math.round(grossFinal * paidRate) / 100
   const paidCommission = Math.round(grossPaid * paidRate) / 100
-  return { unresolved: false, grossAgreed, grossPaid, projectedCommission, projectedNet: grossAgreed - projectedCommission, paidCommission, netPaid: grossPaid - paidCommission, paidRate }
+  return { unresolved: false, grossAgreed, grossFinal, grossPaid, initialNet, teamUnresolved: team.unresolved, teamTotal: team.total, bandPaid: team.bandPaid, managerPaid: team.managerPaid, projectedCommission, projectedNet: grossFinal - projectedCommission - team.total, paidCommission, netPaid: Math.round((grossPaid - paidCommission - team.managerPaid) * 100) / 100, paidRate }
 }
 
 export function totalNetConcertFees(concerts: Concert[], currentLabel?: LabelAgreement | null): number {
@@ -136,7 +203,7 @@ export interface MoneyMovement {
   category: string
   note: string
   paymentMethod?: MoneyMovementPaymentMethod
-  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total' | 'merch_total_card' | 'merch_total_cash' | 'concert_expense'
+  sourceType?: 'concert_fee' | 'merch_sale' | 'legacy_merch' | 'merch_total' | 'merch_total_card' | 'merch_total_cash' | 'concert_expense' | 'team_payment'
   sourceId?: string
 }
 
@@ -201,7 +268,7 @@ export interface MaterialItem {
 }
 
 export type PersonKind = 'musica' | 'tecnic' | 'manager' | 'contacte'
-export interface BandPerson { id: string; name: string; kind: PersonKind; phone: string; email: string; active: boolean }
+export interface BandPerson { id: string; name: string; kind: PersonKind; phone: string; email: string; active: boolean; feeAgreement?: PersonFeeAgreement }
 export interface BandMaterial { id: string; name: string; category: string; quantity?: number; active: boolean }
 
 export function validMaterialQuantity(value: unknown): value is number {
@@ -210,6 +277,8 @@ export function validMaterialQuantity(value: unknown): value is number {
 export interface SetlistTemplate { id: string; name: string; songs: string[]; active: boolean }
 
 export interface ConcertDetails {
+  finalFee?: number
+  teamFees?: ConcertTeamFee[]
   announceable?: boolean
   management?: ConcertManager
   labelAgreement?: LabelAgreement
@@ -270,11 +339,16 @@ export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgre
   const generated: MoneyMovement[] = []
   for (const concert of concerts) {
     const settlement = concertSettlement(concert, label)
-    if (!settlement.unresolved && settlement.netPaid > 0) generated.push({
+    if (!settlement.unresolved && settlement.netPaid !== 0) generated.push({
       id: `automatic:concert-fee:${concert.id}`, sourceType: 'concert_fee', sourceId: concert.id,
-      concertId: concert.id, kind: 'ingres', amount: settlement.netPaid, paymentMethod: concert.details.feePaymentMethod || 'bank',
+      concertId: concert.id, kind: settlement.netPaid < 0 ? 'despesa' : 'ingres', amount: Math.abs(settlement.netPaid), paymentMethod: concert.details.feePaymentMethod || 'bank',
       date: concert.updatedAt?.slice(0, 10) || today, category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
     })
+    for (const fee of concert.details.teamFees ?? []) for (const payment of fee.payments) {
+      if (payment.payer !== 'band') continue
+      generated.push({ id: `automatic:team-payment:${payment.id}`, sourceType: 'team_payment', sourceId: payment.id, concertId: concert.id,
+        kind: 'despesa', amount: payment.amount, date: payment.date, paymentMethod: payment.paymentMethod, category: 'Honoraris de l’equip', note: `${fee.name} · ${concert.title}` })
+    }
     if (concert.details.expenses > 0) generated.push({
       id: `automatic:concert-expense:${concert.id}`, sourceType: 'concert_expense', sourceId: concert.id,
       concertId: concert.id, kind: 'despesa', amount: concert.details.expenses, paymentMethod: concert.details.expensePaymentMethod || 'bank',
@@ -300,6 +374,7 @@ export function generatedTreasuryMovements(concerts: Concert[], label: LabelAgre
 }
 
 export interface ConcertClosingSummary {
+  teamExpenses: number
   netFee: number
   merchRevenue: number
   usesDetailedSales: boolean
@@ -317,11 +392,12 @@ export function concertClosingSummary(concert: Concert, label: LabelAgreement | 
   const manualExpenses = expenseMovements.reduce((sum, movement) => sum + movement.amount, 0)
   const legacyExpenses = expenseMovements.length ? 0 : concert.details.expenses
   const netFee = concertSettlement(concert, label).netPaid
+  const teamExpenses = teamFeeSummary(concert).bandPaid
   const usesDetailedSales = sales.length > 0
   const merchRevenue = usesDetailedSales
     ? sales.reduce((sum, sale) => sum + sale.quantity * sale.unitPrice, 0)
     : concert.details.merchSales
-  return { netFee, merchRevenue, usesDetailedSales, manualIncome, manualExpenses, legacyExpenses, balance: netFee + merchRevenue + manualIncome - manualExpenses - legacyExpenses }
+  return { netFee, merchRevenue, usesDetailedSales, manualIncome, manualExpenses, legacyExpenses, teamExpenses, balance: netFee + merchRevenue + manualIncome - manualExpenses - legacyExpenses - teamExpenses }
 }
 
 export const statusLabels: Record<ConcertStatus, string> = {
@@ -373,7 +449,7 @@ export function getPending(concert: Concert): string[] {
       pending.push(`${document.direction === 'enviar' ? 'Enviar' : 'Rebre'} ${document.name}`)
     }
   }
-  if (concert.status === 'realitzat' && concert.feeAmount > concert.feePaid) {
+  if (concert.status === 'realitzat' && effectiveConcertFee(concert) > concert.feePaid) {
     pending.push('Cobrar el catxet pendent')
   }
   return pending

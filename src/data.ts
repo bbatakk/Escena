@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { concertSettlement, createId, generatedTreasuryMovements, type BandDocument, type BandMaterial, type BandPerson, type Concert, type LabelAgreement, type MoneyMovement, type MerchProduct, type MerchSale, type SetlistTemplate, type SongProject, type SongShare, type SongVersion, emptyDetails, validateLabelAgreement, validMaterialQuantity } from './model'
 import { createSongShareToken, hashSongShareToken } from './songShares'
+import { validConcertEconomics, validPersonFeeAgreement } from './model'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -133,10 +134,11 @@ export function validateBackup(value: unknown): value is AppBackup {
     && Array.isArray(backup.money) && backup.money.every((item) => hasId(item) && (item.kind === 'ingres' || item.kind === 'despesa') && nonNegative(item.amount) && isDate(item.date) && (item.category === undefined || typeof item.category === 'string') && (item.note === undefined || typeof item.note === 'string') && (item.concertId === undefined || typeof item.concertId === 'string') && (item.paymentMethod === undefined || item.paymentMethod === 'bank' || item.paymentMethod === 'cash'))
     && Array.isArray(backup.merchProducts) && backup.merchProducts.every((item) => hasId(item) && typeof item.name === 'string' && nonNegative(item.price) && Number.isSafeInteger(item.stock) && nonNegative(item.stock) && (item.active === undefined || typeof item.active === 'boolean') && item.imageUrl === undefined && (item.imageDataUrl === undefined || (typeof item.imageDataUrl === 'string' && /^data:image\/(?:webp|png|jpeg);base64,/.test(item.imageDataUrl) && item.imageDataUrl.length <= 7 * 1024 * 1024)) && (item.sizes === undefined || (Array.isArray(item.sizes) && item.sizes.every((size) => isRecord(size) && typeof size.name === 'string' && Number.isSafeInteger(size.stock) && nonNegative(size.stock)))))
     && Array.isArray(backup.merchSales) && backup.merchSales.every((item) => hasId(item) && typeof item.concertId === 'string' && typeof item.productId === 'string' && typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 && nonNegative(item.unitPrice) && (item.note === undefined || typeof item.note === 'string') && (item.size === undefined || typeof item.size === 'string') && (item.paymentMethod === undefined || item.paymentMethod === 'card' || item.paymentMethod === 'cash'))
-    && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean'))
+    && Array.isArray(backup.people) && backup.people.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && (item.feeAgreement === undefined || validPersonFeeAgreement(item.feeAgreement)))
     && Array.isArray(backup.materials) && backup.materials.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && (item.category === undefined || typeof item.category === 'string') && (item.quantity === undefined || validMaterialQuantity(item.quantity)))
     && Array.isArray(backup.setlists) && backup.setlists.every((item) => hasId(item) && typeof item.name === 'string' && (item.active === undefined || typeof item.active === 'boolean') && Array.isArray(item.songs) && item.songs.every((song) => typeof song === 'string'))
     && (backup.version === 1 ? (backup.songProjects === undefined && backup.songVersions === undefined) || validSongData : validSongData)
+    && backup.concerts.every((concert) => validConcertEconomics(concert))
 }
 
 export async function getBandName(): Promise<string> {
@@ -439,16 +441,22 @@ function writeLocalGeneratedMovement(sourceType: NonNullable<MoneyMovement['sour
     id: existing?.id || `automatic:${sourceType}:${sourceId}`,
     sourceType,
     sourceId,
-    date: existing && existing.amount === movement.amount ? existing.date : movement.date,
+    date: sourceType !== 'team_payment' && existing && existing.amount === movement.amount ? existing.date : movement.date,
   }
   writeCache(moneyKey, [generated, ...rest])
 }
 
 async function syncLocalConcertIncome(concert: Concert, currentLabel?: LabelAgreement | null): Promise<void> {
   const settlement = concertSettlement(concert, currentLabel === undefined ? getCachedBandLabel() : currentLabel)
-  writeLocalGeneratedMovement('concert_fee', concert.id, !settlement.unresolved && settlement.netPaid > 0 ? {
-    concertId: concert.id, kind: 'ingres', amount: settlement.netPaid, paymentMethod: concert.details.feePaymentMethod || 'bank', date: localToday(), category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
+  writeLocalGeneratedMovement('concert_fee', concert.id, !settlement.unresolved && settlement.netPaid !== 0 ? {
+    concertId: concert.id, kind: settlement.netPaid < 0 ? 'despesa' : 'ingres', amount: Math.abs(settlement.netPaid), paymentMethod: concert.details.feePaymentMethod || 'bank', date: localToday(), category: 'Catxet', note: `Generat automàticament · Net cobrat · ${concert.title}`,
   } : null)
+  const payments = generatedTreasuryMovements([concert], null, []).filter((item) => item.sourceType === 'team_payment')
+  const activeIds = new Set(payments.map((item) => item.sourceId))
+  for (const old of readCache<MoneyMovement>(moneyKey).filter((item) => item.concertId === concert.id && item.sourceType === 'team_payment' && !activeIds.has(item.sourceId))) {
+    writeLocalGeneratedMovement('team_payment', old.sourceId!, null)
+  }
+  for (const payment of payments) writeLocalGeneratedMovement('team_payment', payment.sourceId!, payment)
   syncLocalConcertExpense(concert)
   await syncLocalMerchTotalMovement()
 }
@@ -502,7 +510,7 @@ function canonicalOfflineValue(entity: OfflineDataEntity, value: unknown, table?
   if (entity === 'resource') {
     const resource = value.value && isRecord(value.value) ? value.value : value
     const resourceTable = table || (typeof value.table === 'string' ? value.table as ResourceTable : undefined)
-    if (resourceTable === 'band_people') return { id: resource.id, name: resource.name, kind: resource.kind, phone: resource.phone || '', email: resource.email || '', active: resource.active }
+    if (resourceTable === 'band_people') return { id: resource.id, name: resource.name, kind: resource.kind, phone: resource.phone || '', email: resource.email || '', active: resource.active, feeAgreement: resource.feeAgreement ?? resource.fee_agreement ?? undefined }
     if (resourceTable === 'band_materials') return { id: resource.id, name: resource.name, category: resource.category || '', quantity: resource.quantity ?? 1, active: resource.active }
     if (resourceTable === 'setlist_templates') return { id: resource.id, name: resource.name, songs: resource.songs || [], active: resource.active }
   }
@@ -650,6 +658,7 @@ export async function listConcerts(): Promise<Concert[]> {
 
 export async function saveConcert(concert: Concert, currentLabel?: LabelAgreement | null): Promise<Concert> {
   concert = normalizeConcert(concert)
+  if (!validConcertEconomics(concert)) throw new Error('Revisa el catxet, els trams d’honoraris i les liquidacions: imports positius amb dos decimals, trams creixents i dates vàlides.')
   if (concert.details.management === 'discografica') {
     if (!concert.details.labelAgreement) throw new Error('Indica les condicions de la discogràfica abans de desar el concert.')
     concert = { ...concert, details: { ...concert.details, labelAgreement: validateLabelAgreement(concert.details.labelAgreement) } }
@@ -873,6 +882,7 @@ export async function syncOfflineData(): Promise<number> {
 export async function deleteConcert(id: string, expectedUpdatedAt?: string): Promise<void> {
   if (!supabase) {
     localSet(demoKey, JSON.stringify(localConcerts().filter((item) => item.id !== id)))
+    writeCache(moneyKey, readCache<MoneyMovement>(moneyKey).filter((item) => !(item.sourceType && item.concertId === id)))
     return
   }
   const query = supabase.from('concerts').delete().eq('id', id)
@@ -1448,12 +1458,13 @@ export async function listAllResources<T extends Resource>(table: ResourceTable)
   if (!supabase || offline()) return readCache<T>(resourceKeys[table])
   const { data, error } = await supabase.from(table).select('*').order('name')
   if (error) throw error
-  const rows = data as T[]
+  const rows = table === 'band_people' ? (data || []).map((row) => ({ ...row, feeAgreement: row.fee_agreement ?? undefined })) as T[] : data as T[]
   writeCache(resourceKeys[table], rows)
   return rows
 }
 
 export async function saveResource<T extends Resource>(table: ResourceTable, resource: T): Promise<T> {
+  if (table === 'band_people' && (resource as BandPerson).feeAgreement !== undefined && !validPersonFeeAgreement((resource as BandPerson).feeAgreement)) throw new Error('Els trams d’honoraris han de ser creixents, amb imports positius o zero i un màxim de dos decimals.')
   if (table === 'band_materials') {
     const quantity = (resource as BandMaterial).quantity ?? 1
     if (!validMaterialQuantity(quantity)) throw new Error('La quantitat ha de ser un nombre enter positiu.')
@@ -1462,13 +1473,13 @@ export async function saveResource<T extends Resource>(table: ResourceTable, res
   if (!supabase) { const all = readCache<T>(resourceKeys[table]); const next = [...all.filter((item) => item.id !== resource.id), resource]; writeCache(resourceKeys[table], next); return resource }
   if (offline()) { const all = readCache<T>(resourceKeys[table]); const previous = all.find((item) => item.id === resource.id) ?? null; writeCache(resourceKeys[table], [...all.filter((item) => item.id !== resource.id), resource]); queueData('resource', 'save', { id: resource.id, table, value: resource }, previous, true); return resource }
   const values = table === 'band_people'
-    ? { id: resource.id, band_id: await bandId(), name: (resource as BandPerson).name, kind: (resource as BandPerson).kind, phone: (resource as BandPerson).phone, email: (resource as BandPerson).email, active: resource.active }
+    ? { id: resource.id, band_id: await bandId(), name: (resource as BandPerson).name, kind: (resource as BandPerson).kind, phone: (resource as BandPerson).phone, email: (resource as BandPerson).email, active: resource.active, fee_agreement: (resource as BandPerson).feeAgreement ?? null }
     : table === 'band_materials'
       ? { id: resource.id, band_id: await bandId(), name: (resource as BandMaterial).name, category: (resource as BandMaterial).category, quantity: (resource as BandMaterial).quantity, active: resource.active }
       : { id: resource.id, band_id: await bandId(), name: (resource as SetlistTemplate).name, songs: (resource as SetlistTemplate).songs, active: resource.active }
   const { data, error } = await (supabase as any).from(table).upsert(values).select('*').single() as { data: T | null; error: Error | null }
   if (error) throw error
-  const saved = data as T
+  const saved = table === 'band_people' ? { ...data, feeAgreement: (data as unknown as { fee_agreement?: BandPerson['feeAgreement'] }).fee_agreement ?? undefined } as T : data as T
   writeCache(resourceKeys[table], [...readCache<T>(resourceKeys[table]).filter((item) => item.id !== saved.id), saved])
   return saved
 }

@@ -54,6 +54,8 @@ Tresoreria registra moviments manuals; les vendes de marxandatge de cada fitxa s
 
 ## Provar des del mòbil, fora de localhost
 
+**Catxet final i honoraris de l’equip:** abans de publicar aquesta versió, aplica `supabase/migrations/202610030001_team_fees_final_fee.sql` (després de les migracions anteriors) i actualitza `concert-assistant` si l’utilitzes. A «Persones» pots configurar imports fixos o trams inclusius; en seleccionar una persona a la fitxa se’n copien les condicions. El catxet final és opcional i determina els trams de comissió i honoraris; si és buit s’utilitza l’acordat. El catxet cobrat és brut liquidat abans dels descomptes. Registra els honoraris pagats per la banda amb compte i data, o els descomptats pel gestor; l’app genera els moviments corresponents sense duplicar-los. La migració recalcula els ingressos de catxet existents amb el tram del catxet final/acordat, també per cobraments parcials.
+
 1. Puja aquest projecte a un repositori Git (sense `.env.local`).
 2. Importa'l a [Vercel](https://vercel.com/) com a projecte Vite. Build: `npm run build`; directori de sortida: `dist`.
 3. A **Environment Variables** de Vercel posa les dues variables `VITE_SUPABASE_*` anteriors i torna a desplegar. Són identificadors públics: la seguretat de les dades depèn de l'autenticació i les polítiques RLS de la migració.

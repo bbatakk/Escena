@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { accountStorageKey, activeResources, backupVersion, clearAccountLocalData, isConcertOwnedFile, isSongOwnedFile, validateBackup } from './data'
-import { newConcert, type SongVersion } from './model'
+import { createId, newConcert, selectConcertPeople, type BandPerson, type SongVersion } from './model'
+import { deleteConcert, exportBackup, listMoneyMovements, listResource, saveConcert, saveResource } from './data'
 
 describe('propietat dels fitxers d’un concert', () => {
   it('no elimina fitxers compartits de la biblioteca quan es treuen d’un concert', () => {
@@ -38,6 +39,46 @@ describe('aïllament local entre comptes', () => {
     try {
       clearAccountLocalData('user-a')
       expect([...values.keys()]).toEqual([accountStorageKey('escena-demo-concerts-v1', 'user-b'), 'escena-theme'])
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: original })
+    }
+  })
+})
+
+describe('persistència econòmica del concert', () => {
+  it('conserva tarifes i liquidacions en backups, i regenera moviments sense duplicar-los', async () => {
+    const values = new Map<string, string>()
+    const original = globalThis.localStorage
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+      getItem(key: string) { return values.get(key) ?? null },
+      setItem(key: string, value: string) { values.set(key, value) },
+      removeItem(key: string) { values.delete(key) },
+    } })
+    try {
+      const person: BandPerson = { id: createId(), name: 'Tècnica', kind: 'tecnic', phone: '', email: '', active: true, feeAgreement: { kind: 'fixed', amount: 150 } }
+      await saveResource('band_people', person)
+      expect((await listResource<BandPerson>('band_people'))[0].feeAgreement).toEqual(person.feeAgreement)
+      const concert = newConcert()
+      concert.title = 'Prova econòmica'
+      concert.date = '2026-10-03'
+      concert.feeAmount = 1000
+      concert.feePaid = 500
+      concert.details = selectConcertPeople(concert.details, [person.id], [person])
+      concert.details.finalFee = 500
+      concert.details.teamFees![0].payments = [{ id: createId(), date: '2026-10-03', amount: 100, payer: 'band', paymentMethod: 'cash' }]
+      await saveConcert(concert)
+      concert.details.teamFees![0].payments[0].date = '2026-10-04'
+      await saveConcert(concert)
+      const payments = (await listMoneyMovements()).filter((movement) => movement.sourceType === 'team_payment')
+      expect(payments).toHaveLength(1)
+      expect(payments[0]).toMatchObject({ amount: 100, date: '2026-10-04', paymentMethod: 'cash' })
+      const backup = await exportBackup()
+      expect(validateBackup(backup)).toBe(true)
+      expect(backup.money.some((movement) => movement.sourceType === 'team_payment')).toBe(false)
+      expect(backup.concerts.find((item) => item.id === concert.id)?.details.teamFees).toEqual(concert.details.teamFees)
+      expect(validateBackup({ ...backup, people: [{ ...person, feeAgreement: { kind: 'fixed', amount: -10 } }] })).toBe(false)
+      await deleteConcert(concert.id)
+      expect((await listMoneyMovements()).some((movement) => movement.concertId === concert.id && movement.sourceType)).toBe(false)
     } finally {
       Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: original })
     }

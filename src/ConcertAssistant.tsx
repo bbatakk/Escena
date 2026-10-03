@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { selectConcertPeople } from './model'
 import { ArrowRight, Bot, Check, MessageCircleQuestion, Sparkles } from 'lucide-react'
 import { cloudConfigured, deleteBandDocument, deleteMerchSale, deleteMoneyMovement, getBandName, listAllResources, listBandDocuments, listConcerts, listMerchProducts, listMerchSales, listMoneyMovements, saveBandDocument, saveBandName, saveMerchProduct, saveMerchSale, saveMoneyMovement, saveResource, supabase } from './data'
 import { concertSettlement, createId, generatedTreasuryMovements, getPending, moneyMovementBalance, newConcert, statusLabels, totalMerchRevenue, totalNetConcertFees, type BandDocument, type BandMaterial, type BandPerson, type Concert, type ConcertDetails, type ConcertStatus, type LabelAgreement, type MerchProduct, type MoneyMovement, type PersonKind, type SetlistTemplate } from './model'
@@ -222,6 +223,7 @@ function assistantConcertContext(concerts: Concert[], people: BandPerson[], labe
       id: concert.id, title: concert.title, date: concert.date, status: concert.status, statusLabel: statusLabels[concert.status],
       venue: concert.venue, city: concert.city, country: concert.country, address: concert.address,
       feeAmount: concert.feeAmount, feePaid: concert.feePaid, netPaid: settlement.unresolved ? null : settlement.netPaid,
+      economics: { finalFee: concert.details.finalFee, effectiveFee: settlement.grossFinal, commissionRate: settlement.paidRate, teamTotal: settlement.teamTotal, bandPaid: settlement.bandPaid, managerPaid: settlement.managerPaid, projectedNet: settlement.projectedNet, teamUnresolved: settlement.teamUnresolved },
       pending: getPending(concert), schedule: concert.details.schedule.slice(0, 12).map(({ time, label, place }) => ({ time, label, place })),
       setlist: concert.details.setlist.slice(0, 1500),
       details: {
@@ -270,7 +272,8 @@ async function applyAppAction(action: AppAction, context: ActionContext, onWorks
   if (action.section === 'workspace') { onWorkspaceNameChange(await saveBandName(next.name as string)); return }
   if (action.section === 'theme') { const theme = next.theme as ThemeId; localStorage.setItem('escena-theme', theme); onThemeChange(theme); return }
   if (action.section === 'people') {
-    await saveResource('band_people', { ...(next as unknown as BandPerson), id, active: action.mode !== 'archive' }); return
+    const current = context.people.find((person) => person.id === id)
+    await saveResource('band_people', { ...current, ...(next as unknown as BandPerson), feeAgreement: current?.feeAgreement, id, active: action.mode !== 'archive' }); return
   }
   if (action.section === 'materials') {
     await saveResource('band_materials', { ...(next as unknown as BandMaterial), id, active: action.mode !== 'archive' }); return
@@ -391,7 +394,10 @@ export default function ConcertAssistant({ concerts, workspaceName, workspaceLog
           try {
             if (current.updatedAt !== update.updatedAt) throw new Error(`El concert «${current.title}» ha canviat. Torna a preparar la petició.`)
             if ('title' in update.changes && !update.changes.title?.trim()) throw new Error('El concert necessita un nom.')
-            await onUpdateConcert({ ...current, ...update.changes, details: { ...current.details, ...update.changes.details } }); saved += 1
+            const selectedDetails = update.changes.details?.personIds
+              ? selectConcertPeople(current.details, update.changes.details.personIds, await listAllResources<BandPerson>('band_people'))
+              : current.details
+            await onUpdateConcert({ ...current, ...update.changes, details: { ...selectedDetails, ...update.changes.details } }); saved += 1
           }
           catch (cause) { failures.push(cause instanceof Error ? cause.message : 'No s’ha pogut desar un concert.') }
         }
