@@ -91,6 +91,11 @@ export function settleTeamFeeWithManager(concert: Concert, personId: string, dat
   } : fee)
 }
 
+export function revertManagerPayments(concert: Concert, personId: string): ConcertTeamFee[] {
+  const fees = concert.details.teamFees ?? [];
+  return fees.map((fee) => fee.personId === personId ? { ...fee, payments: fee.payments.filter((p) => p.payer !== "manager") } : fee);
+}
+
 export function concertSettlement(concert: Concert, currentLabel?: LabelAgreement | null) {
   const grossAgreed = Math.max(0, concert.feeAmount)
   const grossPaid = Math.max(0, concert.feePaid)

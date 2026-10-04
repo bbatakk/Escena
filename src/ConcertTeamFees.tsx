@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import PersonFeeEditor from './PersonFeeEditor'
-import { createId, formatMoney, settleTeamFeeWithManager, teamFeeSummary, type BandPerson, type Concert, type ConcertTeamFee } from './model'
+import { createId, formatMoney, revertManagerPayments, settleTeamFeeWithManager, teamFeeSummary, type BandPerson, type Concert, type ConcertTeamFee } from './model'
 
 export function TeamFeesClosing({ concert, onChange }: { concert: Concert; onChange: (fees: ConcertTeamFee[]) => void }) {
   const summary = teamFeeSummary(concert)
@@ -18,7 +18,8 @@ export function TeamFeesClosing({ concert, onChange }: { concert: Concert; onCha
       <label className="field">Data de la liquidació d’honoraris<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
       {pending.map((fee) => <div className="team-fee-summary" key={fee.personId}>
         <strong>{fee.name} · {formatMoney(fee.remaining!)} pendents</strong>
-        <button type="button" className="button button-secondary" disabled={!date || concert.feePaid <= 0} onClick={() => onChange(settleTeamFeeWithManager(concert, fee.personId, date))}>Descomptar {formatMoney(fee.remaining!)} del cobrament</button>
+        <button type="button" className="button button-secondary" disabled={!date || concert.feePaid <= 0} onClick={() => onChange(settleTeamFeeWithManager(concert, fee.personId, date))}>Descomptar {formatMoney(fee.remaining!)} del cobrament
+        <button type="button" class="button button-secondary" onClick={() => onChange(revertManagerPayments(concert, fee.personId))}>Desfer descompte del gestor</button></button>
       </div>)}
       {concert.feePaid <= 0 ? <p className="label-concert-note">Indica el catxet brut cobrat per registrar el descompte.</p> : null}
     </> : null}
