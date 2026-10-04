@@ -10,16 +10,18 @@ export function TeamFeesClosing({ concert, onChange }: { concert: Concert; onCha
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   })
   if (!summary.rows.length) return null
-  const pending = summary.rows.filter((fee) => fee.remaining !== null && fee.remaining > 0)
+  const closingRows = summary.rows.filter((fee) => (fee.remaining !== null && fee.remaining > 0) || fee.payments.some((payment) => payment.payer === 'manager'))
   return <div className="team-fees-closing">
     <h3>Honoraris al tancament</h3>
     <p className="label-concert-note">Si {concert.details.labelAgreement?.name || 'el gestor'} paga l’equip i en descompta els honoraris, registra’ls aquí abans de desar. Tresoreria rebrà el catxet menys la comissió i aquests honoraris. Els imports previstos encara no liquidats no es resten del saldo.</p>
-    {pending.length ? <>
+    {closingRows.length ? <>
       <label className="field">Data de la liquidació d’honoraris<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-      {pending.map((fee) => <div className="team-fee-summary" key={fee.personId}>
-        <strong>{fee.name} · {formatMoney(fee.remaining!)} pendents</strong>
-        <button type="button" className="button button-secondary" disabled={!date || concert.feePaid <= 0} onClick={() => onChange(settleTeamFeeWithManager(concert, fee.personId, date))}>Descomptar {formatMoney(fee.remaining!)} del cobrament
-        <button type="button" class="button button-secondary" onClick={() => onChange(revertManagerPayments(concert, fee.personId))}>Desfer descompte del gestor</button></button>
+      {closingRows.map((fee) => <div className="team-fee-summary" key={fee.personId}>
+        <strong>{fee.name}{fee.remaining !== null && fee.remaining > 0 ? ` · ${formatMoney(fee.remaining)} pendents` : ''}</strong>
+        <div className="team-fee-closing-actions">
+          {fee.remaining !== null && fee.remaining > 0 ? <button type="button" className="button button-secondary" disabled={!date || concert.feePaid <= 0} onClick={() => onChange(settleTeamFeeWithManager(concert, fee.personId, date))}>Descomptar {formatMoney(fee.remaining)} del cobrament</button> : null}
+          {fee.payments.some((payment) => payment.payer === 'manager') ? <button type="button" className="button button-secondary" onClick={() => onChange(revertManagerPayments(concert, fee.personId))}>Desfer descompte del gestor</button> : null}
+        </div>
       </div>)}
       {concert.feePaid <= 0 ? <p className="label-concert-note">Indica el catxet brut cobrat per registrar el descompte.</p> : null}
     </> : null}
